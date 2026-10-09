@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read # read current labels and draft state
     outputs:
       run-agent: ${{ steps.classify.outputs.run-agent }}
     steps:
@@ -36,10 +37,19 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: git diff --name-only -z --no-renames "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
 
-      # Labels, draft, and fork status come from the event payload file, never from ${{ }} in run.
+      # The live pull request, not the event payload, so re-runs see current labels and draft state.
+      - name: Fetch pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh api "repos/$REPO/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pull-request.json"
+
       - name: Classify
         id: classify
-        run: node tools/src/cli/classify.ts "$RUNNER_TEMP/changed-files" "$RUNNER_TEMP/classification.json"
+        run: |
+          node tools/src/cli/classify.ts "$RUNNER_TEMP/changed-files" \
+            "$RUNNER_TEMP/pull-request.json" "$RUNNER_TEMP/classification.json"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -60,9 +70,9 @@ jobs:
       STATUS_CONTEXT: test-agent/verify
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      # Fork PRs get a read-only token, so only same-repo PRs post the status.
+      # Fork and Dependabot PRs get a read-only token, so only other same-repo PRs post the status.
       - name: Mark status pending
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -125,7 +135,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Post verification status
-        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
         env:
           GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
@@ -174,9 +184,9 @@ jobs:
           node tools/src/cli/report.ts "$RUNNER_TEMP/classification.json" "$RUNNER_TEMP/report.md"
           cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
 
-      # Fork PRs get a read-only token, so only same-repo PRs get the comment; the job summary covers forks.
+      # Fork and Dependabot PRs get a read-only token, so they get the job summary only.
       - name: Upsert sticky comment
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

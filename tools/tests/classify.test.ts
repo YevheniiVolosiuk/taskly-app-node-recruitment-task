@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyChanges } from '../src/classify.ts';
+import { classifyChanges, pullRequestContext } from '../src/classify.ts';
 
 const openPr = { labels: [], draft: false, isFork: false };
 
@@ -9,7 +9,7 @@ describe('classifyChanges', () => {
 
     expect(result.stop).toBeNull();
     expect(result.files).toEqual([
-      { path: 'backend/src/features/todos/repository.ts', decision: 'candidate', reason: 'Backend logic' },
+      { path: 'backend/src/features/todos/repository.ts', decision: 'pending', reason: 'Backend logic' },
     ]);
   });
 
@@ -20,8 +20,8 @@ describe('classifyChanges', () => {
     );
 
     expect(result.files).toEqual([
-      { path: 'frontend/src/features/todos/hooks/useTodos.ts', decision: 'candidate', reason: 'Frontend logic' },
-      { path: 'frontend/src/features/todos/components/TodoItem.tsx', decision: 'candidate', reason: 'Frontend logic' },
+      { path: 'frontend/src/features/todos/hooks/useTodos.ts', decision: 'pending', reason: 'Frontend logic' },
+      { path: 'frontend/src/features/todos/components/TodoItem.tsx', decision: 'pending', reason: 'Frontend logic' },
     ]);
   });
 
@@ -69,7 +69,7 @@ describe('classifyChanges', () => {
   ])('skips %s as %s', (path, category, reason) => {
     const result = classifyChanges([path], openPr);
 
-    expect(result.files).toEqual([{ path, decision: 'skip', category, reason }]);
+    expect(result.files).toEqual([{ path, decision: 'skipped', category, reason }]);
   });
 });
 
@@ -100,11 +100,12 @@ describe('classifyChanges stops', () => {
     expect(result.stop?.reason).toBe('fork');
   });
 
-  it('still classifies files when stopped', () => {
-    const result = classifyChanges(files, { ...openPr, draft: true });
+  it('marks logic files not_run and still Skips the rest when stopped', () => {
+    const result = classifyChanges([...files, 'README.md'], { ...openPr, draft: true });
 
     expect(result.files).toEqual([
-      { path: 'backend/src/features/todos/repository.ts', decision: 'candidate', reason: 'Backend logic' },
+      { path: 'backend/src/features/todos/repository.ts', decision: 'not_run', reason: 'Backend logic' },
+      { path: 'README.md', decision: 'skipped', category: 'docs', reason: 'Documentation' },
     ]);
   });
 
@@ -112,5 +113,32 @@ describe('classifyChanges stops', () => {
     const result = classifyChanges(files, { ...openPr, labels: ['skip-tests', 'test-agent'] });
 
     expect(result.stop).toBeNull();
+  });
+});
+
+describe('pullRequestContext', () => {
+  const sameRepo = {
+    draft: false,
+    labels: [{ name: 'bug' }, { name: 'skip-test-agent' }],
+    base: { repo: { full_name: 'acme/taskly' } },
+    head: { repo: { full_name: 'acme/taskly' } },
+  };
+
+  it('reads labels and draft state from the pull request', () => {
+    expect(pullRequestContext({ ...sameRepo, draft: true })).toEqual({
+      labels: ['bug', 'skip-test-agent'],
+      draft: true,
+      isFork: false,
+    });
+  });
+
+  it('treats a head repository other than the base as a fork', () => {
+    const pr = { ...sameRepo, head: { repo: { full_name: 'mallory/taskly' } } };
+
+    expect(pullRequestContext(pr).isFork).toBe(true);
+  });
+
+  it('treats a deleted head repository as a fork', () => {
+    expect(pullRequestContext({ ...sameRepo, head: { repo: null } }).isFork).toBe(true);
   });
 });

@@ -17,8 +17,8 @@ describe('renderReport', () => {
         '',
         '| File | Decision | Reason |',
         '| --- | --- | --- |',
-        '| `README.md` | Skip | Documentation |',
-        '| `docs/adr/0004-x.md` | Skip | Documentation |',
+        '| `README.md` | `skipped` | Documentation |',
+        '| `docs/adr/0004-x.md` | `skipped` | Documentation |',
         '',
       ].join('\n'),
     );
@@ -35,9 +35,9 @@ describe('renderReport', () => {
     expect(report).toContain('**2 of 3 changed files are Test Agent candidates.**');
     expect(report).toContain(
       [
-        '| `backend/src/features/todos/router.ts` | Candidate | Backend logic |',
-        '| `frontend/src/lib/http.ts` | Candidate | Frontend logic |',
-        '| `README.md` | Skip | Documentation |',
+        '| `backend/src/features/todos/router.ts` | `pending` | Backend logic |',
+        '| `frontend/src/lib/http.ts` | `pending` | Frontend logic |',
+        '| `README.md` | `skipped` | Documentation |',
       ].join('\n'),
     );
   });
@@ -52,7 +52,7 @@ describe('renderReport', () => {
     const report = renderReport({ classification });
 
     expect(report).toContain(expected);
-    expect(report).toContain('| `backend/src/features/todos/router.ts` | Candidate | Backend logic |');
+    expect(report).toContain('| `backend/src/features/todos/router.ts` | `not_run` | Backend logic |');
   });
 
   it('says so when there are no changed files', () => {
@@ -69,7 +69,7 @@ describe('renderReport', () => {
     const report = renderReport({ classification });
 
     expect(report).toContain(
-      '| `` frontend/src/<img src=x onerror=alert(1)>\\|`x`�\\| injected \\| row \\|.ts `` | Skip | Not app source code |',
+      '| `` frontend/src/<img src=x onerror=alert(1)>\\|`x`�\\| injected \\| row \\|.ts `` | `skipped` | Not app source code |',
     );
     expect(report.split('\n').filter((line) => line.startsWith('|'))).toHaveLength(3);
   });

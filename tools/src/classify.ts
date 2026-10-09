@@ -4,6 +4,22 @@ export type PullRequestContext = {
   isFork: boolean;
 };
 
+// The fields used from a GitHub pull request object (REST `GET /pulls/{n}` or the event payload).
+export type PullRequest = {
+  draft: boolean;
+  labels: readonly { name: string }[];
+  base: { repo: { full_name: string } };
+  head: { repo: { full_name: string } | null };
+};
+
+export function pullRequestContext(pr: PullRequest): PullRequestContext {
+  return {
+    labels: pr.labels.map((label) => label.name),
+    draft: pr.draft,
+    isFork: pr.head.repo?.full_name !== pr.base.repo.full_name,
+  };
+}
+
 export type SkipCategory =
   | 'docs'
   | 'lockfile'
@@ -17,8 +33,8 @@ export type SkipCategory =
   | 'not-source';
 
 export type FileDecision =
-  | { path: string; decision: 'candidate'; reason: string }
-  | { path: string; decision: 'skip'; category: SkipCategory; reason: string };
+  | { path: string; decision: 'pending' | 'not_run'; reason: string }
+  | { path: string; decision: 'skipped'; category: SkipCategory; reason: string };
 
 export type Stop = { reason: 'fork' | 'label' | 'draft'; message: string };
 
@@ -68,14 +84,14 @@ const candidateRules: readonly { pattern: RegExp; reason: string }[] = [
   { pattern: /^frontend\/src\/.+\.tsx?$/, reason: 'Frontend logic' },
 ];
 
-function classifyFile(path: string): FileDecision {
+function classifyFile(path: string, stop: Stop | null): FileDecision {
   const skip = skipRules.find((rule) => rule.pattern.test(path));
-  if (skip) return { path, decision: 'skip', category: skip.category, reason: skip.reason };
+  if (skip) return { path, decision: 'skipped', category: skip.category, reason: skip.reason };
 
   const candidate = candidateRules.find((rule) => rule.pattern.test(path));
-  if (candidate) return { path, decision: 'candidate', reason: candidate.reason };
+  if (candidate) return { path, decision: stop ? 'not_run' : 'pending', reason: candidate.reason };
 
-  return { path, decision: 'skip', category: 'not-source', reason: 'Not app source code' };
+  return { path, decision: 'skipped', category: 'not-source', reason: 'Not app source code' };
 }
 
 function findStop({ isFork, labels, draft }: PullRequestContext): Stop | null {
@@ -86,5 +102,6 @@ function findStop({ isFork, labels, draft }: PullRequestContext): Stop | null {
 }
 
 export function classifyChanges(changedFiles: readonly string[], context: PullRequestContext): Classification {
-  return { stop: findStop(context), files: changedFiles.map(classifyFile) };
+  const stop = findStop(context);
+  return { stop, files: changedFiles.map((path) => classifyFile(path, stop)) };
 }

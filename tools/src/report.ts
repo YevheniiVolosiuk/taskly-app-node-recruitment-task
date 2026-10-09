@@ -8,7 +8,7 @@ function verdict({ stop, files }: Classification): string {
   if (stop) return `Test Agent skipped: ${stop.message}.`;
   if (files.length === 0) return 'Test Agent skipped: no changed files.';
 
-  const candidates = files.filter((file) => file.decision === 'candidate').length;
+  const candidates = files.filter((file) => file.decision === 'pending').length;
   if (candidates === 0) return `Test Agent skipped: all ${files.length} changed files were Skipped.`;
   return `${candidates} of ${files.length} changed files are Test Agent candidates.`;
 }
@@ -24,15 +24,14 @@ function codeSpan(text: string): string {
 }
 
 function row(file: FileDecision): string {
-  const decision = file.decision === 'candidate' ? 'Candidate' : 'Skip';
-  return `| ${codeSpan(file.path)} | ${decision} | ${file.reason} |`;
+  return `| ${codeSpan(file.path)} | \`${file.decision}\` | ${file.reason} |`;
 }
 
 function table(files: readonly FileDecision[]): string[] {
   if (files.length === 0) return [];
   const ordered = [
-    ...files.filter((file) => file.decision === 'candidate'),
-    ...files.filter((file) => file.decision === 'skip'),
+    ...files.filter((file) => file.decision !== 'skipped'),
+    ...files.filter((file) => file.decision === 'skipped'),
   ];
   return ['| File | Decision | Reason |', '| --- | --- | --- |', ...ordered.map(row), ''];
 }
