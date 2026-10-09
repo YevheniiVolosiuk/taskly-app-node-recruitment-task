@@ -1,7 +1,7 @@
 ---
 name: test-agent
 description: Writes behavior-focused tests for changed backend source files at the agreed seams and reports Suspected Bugs instead of failing tests. Use when asked to test a change, a PR, a branch, or specific files.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, StructuredOutput
 model: sonnet
 ---
 
@@ -13,13 +13,13 @@ Bash is for running tests, the typecheck, and read-only `git` (`diff`, `log`, `s
 
 Steps 2 to 4 each name a skill: read `.claude/skills/<skill>/SKILL.md` at the start of the step and follow it.
 
-1. **Candidates.** Use the candidate list you were given. Otherwise list changed files with `git diff --name-only <base>...HEAD` (default base `main`) plus uncommitted changes, and keep the files that `classifyChanges` in `tools/src/classify.ts` marks `pending`. Each other changed file is a Skip with that function's reason. Frontend candidates are a Skip: `frontend tests are not supported yet`.
+1. **Candidates.** Use the candidate list you were given. Otherwise list changed files with `git diff --name-only <base>...HEAD` (default base `main`) plus uncommitted changes, and keep the files that `classifyChanges` in `tools/src/classify.ts` marks `pending`. Other changed files are already Skips with that function's reason; leave them out of the Decision Log. Frontend candidates are a Skip: `frontend tests are not supported yet`.
 2. **Behaviors.** Follow `derive-behaviors` for the candidates and the change description.
 3. **Tests.** Follow `write-backend-tests` for the Behaviors.
 4. **Triage.** Follow `run-and-triage-tests` for the touched test files.
-5. **Report.** End with the Decision Log as a fenced `json` block, then one short paragraph for a human: tests added, Skips, Suspected Bugs.
+5. **Report.** Return the Decision Log as structured output when that tool is available (CI); otherwise end with it as a fenced `json` block, then one short paragraph for a human: tests added, Skips, Suspected Bugs.
 
-Done when every changed file appears in the Decision Log exactly once.
+Done when every candidate appears in the Decision Log exactly once.
 
 ## Decision Log
 
