@@ -21,14 +21,17 @@ jobs:
     env:
       REPO: ${{ github.repository }}
       SHA: ${{ github.event.pull_request.head.sha }}
+      STATUS_CONTEXT: test-agent/verify
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      # Fork PRs get a read-only token, so only same-repo PRs post the status.
       - name: Mark status pending
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api --method POST "repos/$REPO/statuses/$SHA" \
-            -f state=pending -f context=test-agent/verify \
+            -f state=pending -f context="$STATUS_CONTEXT" \
             -f description="Running backend and frontend suites" -f target_url="$RUN_URL"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,7 +52,7 @@ jobs:
         working-directory: backend
         run: |
           npm ci
-          npm run test:coverage
+          npm run test:coverage -- --coverage.reportOnFailure
 
       - name: Frontend tests with coverage
         id: frontend
@@ -57,30 +60,39 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npm run test:coverage
+          npm run test:coverage -- --coverage.reportOnFailure
 
-      - name: Upload coverage summaries
+      - name: Upload backend coverage summary
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: coverage-summary
-          path: |
-            backend/coverage/coverage-summary.json
-            frontend/coverage/coverage-summary.json
+          name: coverage-summary-backend
+          path: backend/coverage/coverage-summary.json
+          if-no-files-found: warn
+
+      - name: Upload frontend coverage summary
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-summary-frontend
+          path: frontend/coverage/coverage-summary.json
           if-no-files-found: warn
 
       - name: Post verification status
-        if: ${{ !cancelled() }}
+        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           GH_TOKEN: ${{ github.token }}
-          BACKEND: ${{ steps.backend.outcome }}
-          FRONTEND: ${{ steps.frontend.outcome }}
+          JOB_STATUS: ${{ job.status }}
+          BACKEND_OUTCOME: ${{ steps.backend.outcome }}
+          FRONTEND_OUTCOME: ${{ steps.frontend.outcome }}
         run: |
-          if [ "$BACKEND" = success ] && [ "$FRONTEND" = success ]; then
+          if [ "$JOB_STATUS" = cancelled ]; then
+            state=error
+          elif [ "$BACKEND_OUTCOME" = success ] && [ "$FRONTEND_OUTCOME" = success ]; then
             state=success
           else
             state=failure
           fi
           gh api --method POST "repos/$REPO/statuses/$SHA" \
-            -f state="$state" -f context=test-agent/verify \
-            -f description="backend: $BACKEND, frontend: $FRONTEND" -f target_url="$RUN_URL"
+            -f state="$state" -f context="$STATUS_CONTEXT" \
+            -f description="backend: $BACKEND_OUTCOME, frontend: $FRONTEND_OUTCOME" -f target_url="$RUN_URL"
