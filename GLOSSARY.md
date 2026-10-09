@@ -20,6 +20,10 @@ _Avoid_: implementation detail, internals
 A Test Agent decision not to write tests for a changed file, always recorded with a reason (no behavior change, non-logic file, already covered).
 _Avoid_: ignore, exclusion
 
+**Candidate**:
+A changed file that the classification passes to the Test Agent because it holds app logic; every other changed file is a Skip.
+_Avoid_: target, testable file
+
 **Suspected Bug**:
 A generated test that fails because production code appears wrong rather than the test. Reported in the PR, never committed.
 _Avoid_: failing test, flaky test
