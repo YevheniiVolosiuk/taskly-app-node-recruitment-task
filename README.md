@@ -134,3 +134,24 @@ Coverage — `backend/coverage/index.html`:
 ```sh
 npm run test:coverage
 ```
+
+## Test Agent tools
+
+TypeScript helpers for the Test Agent PR workflow (`.github/workflows/test-agent.yml`). Tests: Vitest. Node.js >=24 runs the CLIs directly, no build step.
+
+- `classifyChanges` — sorts changed files into Test Agent candidates and Skips, each with a reason; stops for drafts, fork PRs, and the `skip-test-agent` label.
+- `renderReport` — renders the sticky PR comment and job summary.
+
+Installation:
+
+```sh
+cd tools
+npm ci
+```
+
+Type check and tests:
+
+```sh
+npm run typecheck
+npm test
+```
