@@ -1,0 +1,86 @@
+name: Test Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: test-agent-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verification Job
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      statuses: write # post the test-agent/verify commit status
+    env:
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Mark status pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/$REPO/statuses/$SHA" \
+            -f state=pending -f context=test-agent/verify \
+            -f description="Running backend and frontend suites" -f target_url="$RUN_URL"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend tests with coverage
+        id: backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm run test:coverage
+
+      - name: Frontend tests with coverage
+        id: frontend
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run test:coverage
+
+      - name: Upload coverage summaries
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-summary
+          path: |
+            backend/coverage/coverage-summary.json
+            frontend/coverage/coverage-summary.json
+          if-no-files-found: warn
+
+      - name: Post verification status
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKEND: ${{ steps.backend.outcome }}
+          FRONTEND: ${{ steps.frontend.outcome }}
+        run: |
+          if [ "$BACKEND" = success ] && [ "$FRONTEND" = success ]; then
+            state=success
+          else
+            state=failure
+          fi
+          gh api --method POST "repos/$REPO/statuses/$SHA" \
+            -f state="$state" -f context=test-agent/verify \
+            -f description="backend: $BACKEND, frontend: $FRONTEND" -f target_url="$RUN_URL"
