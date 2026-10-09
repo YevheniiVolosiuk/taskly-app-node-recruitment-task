@@ -1,14 +1,23 @@
 import type { Classification } from './classify.ts';
 import type { Decision, DecisionLog, FileLog } from './decision-log.ts';
+import type { PatchRejection } from './patch.ts';
 
 export type AgentResult =
   | { status: 'not_run' }
   | { status: 'failed'; reason: string }
   | { status: 'succeeded'; log: DecisionLog };
 
+export type ApplyResult =
+  | { status: 'not_run' }
+  | { status: 'committed'; sha: string }
+  | { status: 'no_changes' }
+  | { status: 'rejected'; rejected: readonly PatchRejection[] }
+  | { status: 'failed' };
+
 export type ReportInput = {
   classification: Classification;
   agent: AgentResult;
+  apply: ApplyResult;
   runUrl: string;
 };
 
@@ -120,6 +129,34 @@ function suspectedBugs(budget: Budget, logs: readonly FileLog[]): string[] {
   return ['### Suspected Bugs', '', ...kept, '', ...omittedNote(omitted, 'more Suspected Bug')];
 }
 
+function applied(budget: Budget, apply: ApplyResult): string[] {
+  switch (apply.status) {
+    case 'not_run':
+      return [];
+    case 'committed':
+      return [`Committed the tests to this branch in ${apply.sha}.`, ''];
+    case 'no_changes':
+      return ['No test changes to commit.', ''];
+    case 'failed':
+      return ['Committing the tests failed; nothing was pushed.', ''];
+    case 'rejected': {
+      const { kept, omitted } = fit(
+        budget,
+        apply.rejected.map(({ path, reason }) => `- ${codeSpan(path)}: ${reason}`),
+      );
+      return [
+        '### Patch rejected',
+        '',
+        'Nothing was pushed: the patch changes what the Test Agent may not write.',
+        '',
+        ...kept,
+        '',
+        ...(omitted > 0 ? [`_${plural(omitted, 'more rejected path')} not shown._`, ''] : []),
+      ];
+    }
+  }
+}
+
 function listSection(title: string, items: readonly string[]): string[] {
   return items.length === 0 ? [] : [`${title}:`, '', ...items.map((item) => `- ${codeSpan(item)}`), ''];
 }
@@ -143,7 +180,7 @@ function behaviorsAndTests(budget: Budget, logs: readonly FileLog[]): string[] {
   return collapsible('Behaviors and tests', [...kept, ...omittedNote(omitted, 'more file')]);
 }
 
-export function renderReport({ classification, agent, runUrl }: ReportInput): string {
+export function renderReport({ classification, agent, apply, runUrl }: ReportInput): string {
   const rows = toRows(classification, agent);
   const logs = rows.flatMap((row) => (row.log ? [row.log] : []));
   const summary = agent.status === 'succeeded' ? [escapeMarkdown(agent.log.summary), ''] : [];
@@ -158,9 +195,10 @@ export function renderReport({ classification, agent, runUrl }: ReportInput): st
 
   // Spent in order of importance; the sections still render in reading order.
   const budget = { left: COMMENT_LIMIT - FIXED_TEXT_ALLOWANCE - head.join('\n').length };
+  const applyLines = applied(budget, apply);
   const bugs = suspectedBugs(budget, logs);
   const decisions = table(budget, rows);
   const details = behaviorsAndTests(budget, logs);
 
-  return [...head, ...decisions, ...bugs, ...details, `[Workflow run](${runUrl})`, ''].join('\n');
+  return [...head, ...applyLines, ...decisions, ...bugs, ...details, `[Workflow run](${runUrl})`, ''].join('\n');
 }

@@ -1,24 +1,11 @@
 import { posix } from 'node:path';
+import { isTestPath } from './test-paths.ts';
 
 export type ToolUseDecision = { decision: 'allow' } | { decision: 'deny'; reason: string };
 
 const TEST_AGENT = 'test-agent';
 
 const writeTools = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
-
-// A path segment without dots keeps out dotfiles, `*.config.ts`, and `*.d.ts`.
-const testPathPatterns: readonly RegExp[] = [
-  /^backend\/tests\/([\w-]+\/)*[\w-]+(\.test)?\.ts$/,
-  /^frontend\/src\/([\w-]+\/)*[\w-]+\.test\.tsx?$/,
-  /^frontend\/src\/test\/([\w-]+\/)*[\w-]+\.tsx?$/,
-];
-
-// Loaded by the test runner for every test, so editing it changes what all tests mean.
-const setupFile = /(^|\/)setup\.tsx?$/;
-
-function isTestPath(path: string): boolean {
-  return testPathPatterns.some((pattern) => pattern.test(path)) && !setupFile.test(path);
-}
 
 function deny(reason: string): ToolUseDecision {
   return { decision: 'deny', reason: `The Test Agent may only write test files (see docs/test-seams.md): ${reason}` };

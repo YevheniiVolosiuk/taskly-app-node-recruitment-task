@@ -154,8 +154,66 @@ jobs:
           path: ${{ runner.temp }}/test-changes.patch
           if-no-files-found: error
 
+  # No LLM and no model credential; the only job that can push, and only a patch that changes test files.
+  apply:
+    name: Apply tests
+    needs: agent
+    if: ${{ needs.agent.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # push the agent's test commit to the PR branch
+    outputs:
+      commit: ${{ steps.push.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # The token reaches only the push command, not the validator or git apply.
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: test-changes
+          path: ${{ runner.temp }}
+
+      - name: Validate patch
+        id: validate
+        run: node tools/src/cli/validate-patch.ts "$RUNNER_TEMP/test-changes.patch" "$RUNNER_TEMP/patch-validation.json"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: patch-validation
+          path: ${{ runner.temp }}/patch-validation.json
+          if-no-files-found: ignore
+
+      # Pushing onto the analyzed head fails if the author pushed since, so a stale patch never lands.
+      # Pushes with GITHUB_TOKEN do not start a new run; verify checks out the commit from here.
+      - name: Commit and push
+        id: push
+        if: ${{ steps.validate.outputs.changes == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git apply --index "$RUNNER_TEMP/test-changes.patch"
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --no-verify -m 'test(agent): add tests for the changed files' -m "PR Run: $RUN_URL"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$HEAD_REF"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   verify:
     name: Verification Job
+    needs: apply
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -163,7 +221,8 @@ jobs:
       statuses: write # post the test-agent/verify commit status
     env:
       REPO: ${{ github.repository }}
-      SHA: ${{ github.event.pull_request.head.sha }}
+      # The final commit: the agent's test commit when apply pushed one, else the PR head.
+      SHA: ${{ needs.apply.outputs.commit || github.event.pull_request.head.sha }}
       STATUS_CONTEXT: test-agent/verify
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -179,7 +238,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ env.SHA }}
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -253,7 +312,7 @@ jobs:
 
   report:
     name: Report
-    needs: [classify, agent]
+    needs: [classify, agent, apply]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -282,13 +341,22 @@ jobs:
           name: decision-log
           path: ${{ runner.temp }}
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: ${{ needs.apply.result == 'success' || needs.apply.result == 'failure' }}
+        continue-on-error: true # missing when apply failed before validating
+        with:
+          name: patch-validation
+          path: ${{ runner.temp }}
+
       - name: Render report
         env:
           AGENT_JOB_RESULT: ${{ needs.agent.result }}
+          APPLY_JOB_RESULT: ${{ needs.apply.result }}
+          APPLY_COMMIT: ${{ needs.apply.outputs.commit }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           node tools/src/cli/report.ts "$RUNNER_TEMP/classification.json" "$RUNNER_TEMP/decision-log.json" \
-            "$RUNNER_TEMP/report.md"
+            "$RUNNER_TEMP/patch-validation.json" "$RUNNER_TEMP/report.md"
           cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
 
       # Fork and Dependabot PRs get a read-only token, so they get the job summary only.
