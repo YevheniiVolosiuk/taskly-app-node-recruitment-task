@@ -143,8 +143,6 @@ TypeScript helpers for the Test Agent PR workflow (`.github/workflows/test-agent
 - `parseDecisionLog` — validates the Test Agent's structured output (the Decision Log) against its schema, size limits, and markup rules.
 - `renderReport` — renders the sticky PR comment and job summary: verdict, per-file decisions, Suspected Bugs, and collapsible Behaviors and tests, kept under GitHub's comment limit.
 
-The workflow's `agent` job needs one repository secret: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`.
-
 Installation:
 
 ```sh
@@ -157,4 +155,12 @@ Type check and tests:
 ```sh
 npm run typecheck
 npm test
+```
+
+## GitHub setup
+
+The workflow's `agent` job needs one repository secret: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. The repo owner runs the setup wizard once to store it and to apply the `main` ruleset (`.github/rulesets/main.json`: pull requests only, `test-agent/verify` must pass, no force-pushes). Re-running it is safe; it needs `gh` signed in with admin access:
+
+```sh
+scripts/setup-github.sh
 ```
