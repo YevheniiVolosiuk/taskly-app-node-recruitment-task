@@ -21,6 +21,7 @@ describe('checkToolUse', () => {
     '/repo/backend/tests/fixture.ts',
     '/repo/frontend/src/features/todos/hooks/useTodos.test.ts',
     '/repo/frontend/src/features/todos/components/TodoItem.test.tsx',
+    '/repo/frontend/src/features/todos/TodosPage.seam.test.tsx',
     '/repo/frontend/src/test/todoFixture.ts',
   ])('allows the Test Agent to write test file %s', (filePath) => {
     expect(checkToolUse(writeInput(filePath), projectDir)).toEqual({ decision: 'allow' });

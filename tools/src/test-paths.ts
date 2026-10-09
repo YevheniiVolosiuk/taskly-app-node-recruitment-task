@@ -1,7 +1,7 @@
 // A path segment without dots keeps out dotfiles, `*.config.ts`, `*.d.ts`, and `..`.
 const testPathPatterns: readonly RegExp[] = [
   /^backend\/tests\/([\w-]+\/)*[\w-]+(\.test)?\.ts$/,
-  /^frontend\/src\/([\w-]+\/)*[\w-]+\.test\.tsx?$/,
+  /^frontend\/src\/([\w-]+\/)*[\w-]+(\.seam)?\.test\.tsx?$/,
   /^frontend\/src\/test\/([\w-]+\/)*[\w-]+\.tsx?$/,
 ];
 

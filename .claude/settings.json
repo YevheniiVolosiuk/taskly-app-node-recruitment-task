@@ -4,7 +4,8 @@
     "allow": [
       "Bash(npm --prefix backend test:*)",
       "Bash(backend/node_modules/.bin/tsc -p backend)",
-      "Bash(npm --prefix frontend test:*)"
+      "Bash(npm --prefix frontend test:*)",
+      "Bash(frontend/node_modules/.bin/tsc -p frontend)"
     ]
   },
   "hooks": {
