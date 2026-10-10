@@ -30,37 +30,6 @@ const limits = {
   attempts: 3,
 };
 
-// No single quotes: the workflow passes this schema to claude_args inside single quotes.
-export const decisionLogSchema = {
-  description:
-    `The Test Agent Decision Log, under ${limits.input} characters in total. ` +
-    'summary and reason are plain text: no HTML, markdown links or images, URLs, or @mentions. ' +
-    'No field may contain line breaks or control characters.',
-  type: 'object',
-  additionalProperties: false,
-  required: ['summary', 'files'],
-  properties: {
-    summary: { type: 'string', maxLength: limits.summary },
-    files: {
-      type: 'array',
-      maxItems: limits.files,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['path', 'decision', 'reason', 'behaviors', 'tests', 'attempts'],
-        properties: {
-          path: { type: 'string', minLength: 1, maxLength: limits.path },
-          decision: { enum: decisions },
-          reason: { type: 'string', maxLength: limits.reason },
-          behaviors: { type: 'array', maxItems: limits.behaviors, items: { type: 'string', maxLength: limits.item } },
-          tests: { type: 'array', maxItems: limits.tests, items: { type: 'string', maxLength: limits.item } },
-          attempts: { type: 'integer', minimum: 0, maximum: limits.attempts },
-        },
-      },
-    },
-  },
-};
-
 type UnsafeText = { pattern: RegExp; label: string };
 
 // Paths, Behaviors, and tests render as code spans, where markup is inert: refuse only what breaks or disguises a line.
@@ -73,9 +42,47 @@ const unsafeProse: readonly UnsafeText[] = [
   ...unsafeCode,
   { pattern: /<[A-Za-z!/?]/, label: 'HTML' },
   { pattern: /\]\(|!\[/, label: 'a markdown link or image' },
-  { pattern: /[A-Za-z][\w+.-]*:\/\/|\bwww\./i, label: 'a URL' },
+  { pattern: /[A-Za-z][\w+.-]*:\/\/|\b[Ww]{3}\./, label: 'a URL' },
   { pattern: /(^|\W)@\w/, label: 'an @mention' },
 ];
+
+// The agent validates its output against the schema while it runs, so a refused string is retried, not a failed run.
+// JSON Schema patterns take no flags, so these patterns use none.
+function text(maxLength: number, unsafeText: readonly UnsafeText[]) {
+  const pattern = unsafeText.map(({ pattern }) => `(?:${pattern.source})`).join('|');
+  return { type: 'string', maxLength, not: { pattern } };
+}
+
+// No single quotes: the workflow passes this schema to claude_args inside single quotes.
+export const decisionLogSchema = {
+  description:
+    `The Test Agent Decision Log, under ${limits.input} characters in total. ` +
+    'summary and reason are plain text: no HTML, markdown links or images, URLs, or @mentions. ' +
+    'No field may contain line breaks or control characters.',
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'files'],
+  properties: {
+    summary: text(limits.summary, unsafeProse),
+    files: {
+      type: 'array',
+      maxItems: limits.files,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['path', 'decision', 'reason', 'behaviors', 'tests', 'attempts'],
+        properties: {
+          path: { ...text(limits.path, unsafeCode), minLength: 1 },
+          decision: { enum: decisions },
+          reason: text(limits.reason, unsafeProse),
+          behaviors: { type: 'array', maxItems: limits.behaviors, items: text(limits.item, unsafeCode) },
+          tests: { type: 'array', maxItems: limits.tests, items: text(limits.item, unsafeCode) },
+          attempts: { type: 'integer', minimum: 0, maximum: limits.attempts },
+        },
+      },
+    },
+  },
+};
 
 class InvalidLog extends Error {}
 

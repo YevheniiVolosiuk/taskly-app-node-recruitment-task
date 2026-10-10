@@ -171,6 +171,21 @@ jobs:
         id: clock
         run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
 
+      # The subprocess scrub below runs subprocesses in Claude Code's sandbox, which needs bubblewrap and socat. The
+      # runner image lacks both and blocks the unprivileged user namespaces bwrap needs; the bwrap call fails here
+      # instead of inside the agent.
+      - name: Install sandbox dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / true
+
+      # The sandbox stubs a missing root package.json as an empty file, which esbuild fails to parse while bundling
+      # vite.config.ts. A valid one stops the stub.
+      - name: Add root package.json
+        run: test -e package.json || echo '{}' > package.json
+
       # On pull requests the action restores .claude/ from the base branch, so the PR cannot rewrite the agent's rules.
       - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         id: agent
@@ -183,6 +198,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          show_full_output: true
           prompt: |
             Test this pull request.
 
@@ -194,9 +210,10 @@ jobs:
           claude_args: |
             --agent test-agent
             --model sonnet
-            --max-turns 30
+            --max-turns 80
             --add-dir ${{ runner.temp }}/test-agent-input
             --json-schema '${{ steps.schema.outputs.json }}'
+            --allowedTools Edit Write "Bash(npm --prefix backend test:*)" "Bash(backend/node_modules/.bin/tsc -p backend)" "Bash(npm --prefix frontend test:*)" "Bash(frontend/node_modules/.bin/tsc -p frontend)"
             --disallowedTools WebFetch WebSearch "Bash(git push:*)" "Bash(gh:*)" "Bash(curl:*)" "Bash(wget:*)"
 
       # Agent output reaches scripts only through env vars and files. The action's final result message says why a
@@ -235,8 +252,9 @@ jobs:
       # Everything the agent changed, minus the agent configuration the action restored from the base branch.
       - name: Save test patch
         run: |
-          git add --all -- . ':!.claude' ':!.mcp.json' ':!.claude.json' ':!.gitmodules' ':!.ripgreprc' \
-            ':!CLAUDE.md' ':!CLAUDE.local.md' ':!.husky'
+          # Unstage instead of excluding: an exclude pathspec naming an ignored file makes git add fail.
+          git add --all
+          git reset --quiet -- .claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md .husky package.json
           git diff --cached --binary > "$RUNNER_TEMP/test-changes.patch"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
