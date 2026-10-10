@@ -25,3 +25,7 @@ coverage/
 # Local tooling
 .idea/
 .claude/worktrees/
+
+# Verify skill runs (state and evidence)
+.verify/
+.playwright-cli/

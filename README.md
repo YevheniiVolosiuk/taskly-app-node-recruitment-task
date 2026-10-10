@@ -157,6 +157,12 @@ npm run typecheck
 npm test
 ```
 
+## End-to-end verification
+
+The `verify` skill (`.claude/skills/verify/SKILL.md`) launches an isolated stack, drives the todos API and UI like a user, and keeps evidence in `.verify/evidence/<run-id>/`. In Claude Code, ask it to verify a todos change. Its helper scripts also run by hand.
+
+The Verification Job runs the skill's `smoke-api.mjs` against the built backend and a Postgres service container, plus the frontend type-check and build. Either failing fails `test-agent/verify`.
+
 ## GitHub setup
 
 The workflow's `agent` job needs one repository secret: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. The repo owner runs the setup wizard once to store it and to apply the `main` ruleset (`.github/rulesets/main.json`: pull requests only, `test-agent/verify` must pass, no force-pushes). Re-running it is safe; it needs `gh` signed in with admin access:

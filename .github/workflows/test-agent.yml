@@ -231,6 +231,19 @@ jobs:
       SHA: ${{ needs.apply.outputs.commit || github.event.pull_request.head.sha }}
       STATUS_CONTEXT: test-agent/verify
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    # The smoke check boots the built backend against a real database.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: taskly
+          POSTGRES_PASSWORD: taskly
+          POSTGRES_DB: taskly
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taskly -d taskly"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       # Fork and Dependabot PRs get a read-only token, so only other same-repo PRs post the status.
       - name: Mark status pending
@@ -240,7 +253,7 @@ jobs:
         run: |
           gh api --method POST "repos/$REPO/statuses/$SHA" \
             -f state=pending -f context="$STATUS_CONTEXT" \
-            -f description="Running backend, frontend, and tools suites" -f target_url="$RUN_URL"
+            -f description="Running suites and smoke check" -f target_url="$RUN_URL"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -280,6 +293,28 @@ jobs:
           npm run typecheck
           npm test
 
+      # The verify skill's smoke script, against the built backend directly: boot creates the schema, then health and todos CRUD.
+      - name: Smoke check backend
+        id: smoke-api
+        if: ${{ !cancelled() }}
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://taskly:taskly@127.0.0.1:5432/taskly
+          API_PORT: 8000
+        run: |
+          npm run build
+          node dist/main.js > "$RUNNER_TEMP/backend.log" 2>&1 &
+          backend_pid=$!
+          trap 'kill "$backend_pid"' EXIT
+          node ../.claude/skills/verify/scripts/smoke-api.mjs http://127.0.0.1:8000 \
+            || { echo '::group::Backend log'; cat "$RUNNER_TEMP/backend.log"; echo '::endgroup::'; exit 1; }
+
+      - name: Smoke check frontend type-check and build
+        id: smoke-build
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run build
+
       - name: Upload backend coverage summary
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -304,17 +339,21 @@ jobs:
           BACKEND_OUTCOME: ${{ steps.backend.outcome }}
           FRONTEND_OUTCOME: ${{ steps.frontend.outcome }}
           TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          SMOKE_API_OUTCOME: ${{ steps.smoke-api.outcome }}
+          SMOKE_BUILD_OUTCOME: ${{ steps.smoke-build.outcome }}
         run: |
           if [ "$JOB_STATUS" = cancelled ]; then
             state=error
-          elif [ "$BACKEND_OUTCOME" = success ] && [ "$FRONTEND_OUTCOME" = success ] && [ "$TOOLS_OUTCOME" = success ]; then
+          elif [ "$BACKEND_OUTCOME" = success ] && [ "$FRONTEND_OUTCOME" = success ] && [ "$TOOLS_OUTCOME" = success ] \
+            && [ "$SMOKE_API_OUTCOME" = success ] && [ "$SMOKE_BUILD_OUTCOME" = success ]; then
             state=success
           else
             state=failure
           fi
           gh api --method POST "repos/$REPO/statuses/$SHA" \
             -f state="$state" -f context="$STATUS_CONTEXT" \
-            -f description="backend: $BACKEND_OUTCOME, frontend: $FRONTEND_OUTCOME, tools: $TOOLS_OUTCOME" -f target_url="$RUN_URL"
+            -f description="backend: $BACKEND_OUTCOME, frontend: $FRONTEND_OUTCOME, tools: $TOOLS_OUTCOME, smoke api: $SMOKE_API_OUTCOME, smoke build: $SMOKE_BUILD_OUTCOME" \
+            -f target_url="$RUN_URL"
 
   report:
     name: Report
