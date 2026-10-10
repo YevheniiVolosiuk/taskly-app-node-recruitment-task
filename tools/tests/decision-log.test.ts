@@ -25,8 +25,34 @@ describe('parseDecisionLog', () => {
     expect(parseDecisionLog(JSON.stringify(validLog))).toEqual({ ok: true, log: validLog });
   });
 
-  it.each(['tested', 'updated', 'skipped', 'suspected_bug'])('accepts the %s decision', (decision) => {
+  it.each(['tested', 'updated', 'suspected_bug'])('accepts the %s decision', (decision) => {
     expect(parseDecisionLog(withEntry({ decision }))).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    'no agreed seam: server start-up and signal handling',
+    'no behavior change: renamed the query keys',
+    'could not write a passing test in 3 attempts: expected 500, received 200',
+    'tests could not run: vitest crashed on start',
+    'already covered: backend/tests/health.test.ts > reports ok when the database answers',
+  ])('accepts a Skip with the reason %s', (reason) => {
+    expect(parseDecisionLog(withEntry({ decision: 'skipped', reason, attempts: 0 }))).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    'not tested in this run',
+    'the run stopped after the backend Suspected Bug',
+    'No gap: covered elsewhere',
+    'already covered',
+    'already covered: frontend/src/features/todos/TodosPage.seam.test.tsx',
+    'no behavior change',
+    'no behavior change beyond what the router tests cover',
+    '',
+  ])('rejects a Skip with the reason %j', (reason) => {
+    expect(parseDecisionLog(withEntry({ decision: 'skipped', reason, attempts: 0 }))).toEqual({
+      ok: false,
+      error: expect.stringContaining('files[0].reason'),
+    });
   });
 
   it('accepts comparison signs in Behaviors and test names', () => {
@@ -111,6 +137,23 @@ describe('parseDecisionLog', () => {
 
 describe('decisionLogSchema', () => {
   const { reason, tests } = decisionLogSchema.properties.files.items.properties;
+  const skipReason = new RegExp(decisionLogSchema.properties.files.items.then.properties.reason.pattern, 'u');
+
+  it('requires a Skip reason prefix only for skipped files', () => {
+    expect(decisionLogSchema.properties.files.items.if).toEqual({ properties: { decision: { const: 'skipped' } } });
+  });
+
+  it.each([
+    ['no behavior change: renamed the query keys', true],
+    ['no behavior change not already covered', false],
+    ['already covered: frontend/src/features/todos/page.test.tsx > lists overdue todos', true],
+    ['not tested in this run', false],
+    ['already covered', false],
+    ['already covered: frontend/src/features/todos/api/todos.test.ts; no threshold miss', false],
+  ])('matches the parser on the Skip reason %j', (value, allowed) => {
+    expect(skipReason.test(value)).toBe(allowed);
+    expect(parseDecisionLog(withEntry({ decision: 'skipped', reason: value, attempts: 0 })).ok).toBe(allowed);
+  });
   // JSON Schema validators compile patterns as Unicode regular expressions.
   const refuses = (schema: { not: { pattern: string } }, value: string) => new RegExp(schema.not.pattern, 'u').test(value);
 

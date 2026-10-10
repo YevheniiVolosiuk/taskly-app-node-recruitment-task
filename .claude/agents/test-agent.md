@@ -19,7 +19,7 @@ Steps 2 to 4 each name a skill: read `.claude/skills/<skill>/SKILL.md` at the st
 4. **Triage.** Follow `run-and-triage-tests` for the touched test files.
 5. **Report.** Return the Decision Log as structured output when that tool is available (CI); otherwise end with it as a fenced `json` block, then one short paragraph for a human: tests added, Skips, Suspected Bugs.
 
-Done when every candidate appears in the Decision Log exactly once.
+Done when every candidate appears in the Decision Log exactly once as `tested`, `updated`, `suspected_bug`, or `skipped` with a reason a skill defines. A Suspected Bug in one file never ends the run: carry on with every other candidate.
 
 ## Decision Log
 
@@ -43,7 +43,12 @@ Done when every candidate appears in the Decision Log exactly once.
 
 - `tested`: new tests added, all passing.
 - `updated`: existing tests changed to match changed Behaviors, all passing.
-- `skipped`: no tests written; `reason` is the Skip reason.
+- `skipped`: no tests written; `reason` fills in one of these templates, and any other reason fails the run:
+  - `no agreed seam: <what is missing>`
+  - `no behavior change: <what changed>`
+  - `could not write a passing test in 3 attempts: <error>`
+  - `tests could not run: <error>`
+  - `already covered: <test file> > <test name>`
 - `suspected_bug`: at least one Behavior failed against the code; `reason` names each failing assertion with expected and received values. Passing tests for the same file stay in `tests`.
 
 `attempts` is the highest attempt count of any test file for that path, 0 when skipped.
