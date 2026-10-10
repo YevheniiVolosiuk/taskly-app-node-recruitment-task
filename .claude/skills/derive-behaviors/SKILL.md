@@ -14,11 +14,16 @@ A **Behavior** (see `GLOSSARY.md`) comes from what the code is _meant_ to do, so
 
 ## Steps
 
-1. For each candidate, read its **public interface** only: exported names, signatures, exported types and schemas, route method and path, comments on exports. `grep -nE '^export|\.(get|post|put|patch|delete)\(' <file>` shows most of it. Function bodies stay unread: a Behavior copied from the body locks in the bug you are hunting.
-2. Collect expected outcomes from **sources**, in this order: the change description, `backend/openapi.json` (HTTP contract), `GLOSSARY.md` and `docs/`, existing tests for neighbouring Behaviors. Each Behavior takes its expected value from a source or a known-good literal.
-3. Write each Behavior as one line: `when <input or action>, <observable outcome>`. Cover the edge each source names (empty, boundary, invalid, not found) as its own Behavior.
-4. Assign each Behavior its seam from `docs/test-seams.md`. A Behavior with no listed seam becomes a Skip: `no agreed seam: <what is missing>`.
-5. A candidate whose change alters no Behavior (rename, extraction, reformat) is a Skip: `no behavior change`.
+1. Run coverage once for each package with a candidate. The flag prints every threshold miss:
+   - `npm --prefix backend test -- --coverage --coverage.reportOnFailure`
+   - `npm --prefix frontend test -- --coverage --coverage.reportOnFailure`
+
+   A candidate named in an `ERROR: Coverage for ... for <file>` line is **below its threshold**; note its `Uncovered Line #s`.
+2. For each candidate, read its **public interface** only: exported names, signatures, exported types and schemas, route method and path, comments on exports. `grep -nE '^export|\.(get|post|put|patch|delete)\(' <file>` shows most of it. Function bodies stay unread: a Behavior copied from the body locks in the bug you are hunting.
+3. Collect expected outcomes from **sources**, in this order: the change description, `backend/openapi.json` (HTTP contract), `GLOSSARY.md` and `docs/`, existing tests for neighbouring Behaviors. Each Behavior takes its expected value from a source or a known-good literal.
+4. Write each Behavior as one line: `when <input or action>, <observable outcome>`. Cover the edge each source names (empty, boundary, invalid, not found) as its own Behavior. A candidate below its threshold also gets a Behavior for each uncovered line; the line shows only _where_ the gap is.
+5. Assign each Behavior its seam from `docs/test-seams.md`. A Behavior with no listed seam becomes a Skip: `no agreed seam: <what is missing>`.
+6. A candidate whose change alters no Behavior (rename, extraction, reformat) and is not below its threshold is a Skip: `no behavior change`.
 
 Done when every candidate has at least one Behavior with a seam and a source, or a Skip with its reason.
 
