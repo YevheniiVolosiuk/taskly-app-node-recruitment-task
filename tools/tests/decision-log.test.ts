@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDecisionLog } from '../src/decision-log.ts';
+import { decisionLogSchema, parseDecisionLog } from '../src/decision-log.ts';
 
 const healthEntry = {
   path: 'backend/src/api/health.ts',
@@ -106,5 +106,29 @@ describe('parseDecisionLog', () => {
 
     expect(result).toEqual({ ok: false, error: expect.stringContaining('files[0].reason') });
     expect(JSON.stringify(result)).not.toContain('steal');
+  });
+});
+
+describe('decisionLogSchema', () => {
+  const { reason, tests } = decisionLogSchema.properties.files.items.properties;
+  // JSON Schema validators compile patterns as Unicode regular expressions.
+  const refuses = (schema: { not: { pattern: string } }, value: string) => new RegExp(schema.not.pattern, 'u').test(value);
+
+  it.each([
+    'list requests /api/todos?status=<filter>',
+    '</details> returns 200',
+    'see [the spec](https://evil.example)',
+    'details at WWW.evil.example',
+    'cc @octocat',
+    'ok\n| injected | row |',
+  ])('refuses the prose the parser refuses: %s', (value) => {
+    expect(parseDecisionLog(withEntry({ reason: value }))).toMatchObject({ ok: false });
+    expect(refuses(reason, value)).toBe(true);
+  });
+
+  it('allows comparison signs in prose and markup in test names', () => {
+    expect(refuses(reason, 'returns 2 < 3 and a >= b')).toBe(false);
+    expect(refuses(tests.items, 'x.test.ts > emails [admin](mailto:a@b.c)')).toBe(false);
+    expect(refuses(tests.items, 'lists todos\u007f')).toBe(true);
   });
 });
