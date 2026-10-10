@@ -17,6 +17,8 @@ export type ApplyResult =
 
 export type MutationResult =
   | { status: 'not_run' }
+  | { status: 'no_files' }
+  | { status: 'suite_failed' }
   | { status: 'failed'; reason: string }
   | { status: 'completed'; summary: MutationSummary };
 
@@ -179,16 +181,31 @@ function survivorLine(pkg: MutationPackage, { file, line, column, mutator, repla
   return `- ${codeSpan(`${pkg}/${file}:${line}:${column}`)} ${mutator}${change}${uncovered}`;
 }
 
+// Why a package has no score; nothing for a package that scored or a Verification Job that did not get this far.
+function mutationNote(result: MutationResult): string | null {
+  switch (result.status) {
+    case 'no_files':
+      return 'no changed source files to mutate';
+    case 'suite_failed':
+      return 'not mutated because its test suite failed';
+    case 'failed':
+      return `mutation testing failed: ${result.reason}`;
+    case 'not_run':
+    case 'completed':
+      return null;
+  }
+}
+
 function mutationTesting(budget: Budget, mutation: MutationResults): string[] {
   const completed = mutationPackages.flatMap((pkg) => {
     const result = mutation[pkg];
     return result.status === 'completed' ? [{ pkg, summary: result.summary }] : [];
   });
-  const failed = mutationPackages.flatMap((pkg) => {
-    const result = mutation[pkg];
-    return result.status === 'failed' ? [`_Mutation testing failed for ${pkg}: ${result.reason}._`, ''] : [];
+  const notes = mutationPackages.flatMap((pkg) => {
+    const note = mutationNote(mutation[pkg]);
+    return note ? [`_${pkg}: ${note}._`, ''] : [];
   });
-  if (completed.length === 0 && failed.length === 0) return [];
+  if (completed.length === 0 && notes.length === 0) return [];
 
   const scores = completed.map(({ pkg, summary: { score, detected, survived, noCoverage } }) => {
     const percent = score === null ? 'n/a' : `${score.toFixed(2)}%`;
@@ -216,7 +233,7 @@ function mutationTesting(budget: Budget, mutation: MutationResults): string[] {
     'Mutation score of the changed source files. A warning, not a gate: it does not change `test-agent/verify`.',
     '',
     ...scoreTable,
-    ...failed,
+    ...notes,
     ...list,
   ];
 }

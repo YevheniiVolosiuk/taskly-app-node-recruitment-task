@@ -386,7 +386,27 @@ describe('renderReport', () => {
 
       const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
 
-      expect(report).toContain('| backend | 75.00% | 3 | 1 | 0 |\n\n_Mutation testing failed for frontend: Stryker failed or timed out._\n');
+      expect(report).toContain('| backend | 75.00% | 3 | 1 | 0 |\n\n_frontend: mutation testing failed: Stryker failed or timed out._\n');
+    });
+
+    it('tells a package with nothing to mutate from one whose test suite failed', () => {
+      const mutation: MutationResults = { backend: { status: 'no_files' }, frontend: { status: 'suite_failed' } };
+
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
+
+      expect(report).toContain(
+        [
+          '### Mutation testing',
+          '',
+          'Mutation score of the changed source files. A warning, not a gate: it does not change `test-agent/verify`.',
+          '',
+          '_backend: no changed source files to mutate._',
+          '',
+          '_frontend: not mutated because its test suite failed._',
+          '',
+        ].join('\n'),
+      );
+      expect(report).not.toContain('| Package |');
     });
 
     it('leaves the section out when mutation testing did not run', () => {

@@ -228,6 +228,10 @@ jobs:
     outputs:
       mutation-backend: ${{ steps.mutation-backend.outcome }}
       mutation-frontend: ${{ steps.mutation-frontend.outcome }}
+      suite-backend: ${{ steps.backend.outcome }}
+      suite-frontend: ${{ steps.frontend.outcome }}
+      files-to-mutate-backend: ${{ steps.files-to-mutate.outputs.backend }}
+      files-to-mutate-frontend: ${{ steps.files-to-mutate.outputs.frontend }}
     env:
       REPO: ${{ github.repository }}
       # The final commit: the agent's test commit when apply pushed one, else the PR head.
@@ -468,6 +472,10 @@ jobs:
           APPLY_COMMIT: ${{ needs.apply.outputs.commit }}
           MUTATION_BACKEND_OUTCOME: ${{ needs.verify.outputs.mutation-backend }}
           MUTATION_FRONTEND_OUTCOME: ${{ needs.verify.outputs.mutation-frontend }}
+          SUITE_BACKEND_OUTCOME: ${{ needs.verify.outputs.suite-backend }}
+          SUITE_FRONTEND_OUTCOME: ${{ needs.verify.outputs.suite-frontend }}
+          FILES_TO_MUTATE_BACKEND: ${{ needs.verify.outputs.files-to-mutate-backend }}
+          FILES_TO_MUTATE_FRONTEND: ${{ needs.verify.outputs.files-to-mutate-frontend }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           node tools/src/cli/report.ts "$RUNNER_TEMP/classification.json" "$RUNNER_TEMP/decision-log.json" \

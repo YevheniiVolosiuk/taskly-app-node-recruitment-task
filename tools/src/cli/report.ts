@@ -1,5 +1,6 @@
 // Usage: AGENT_JOB_RESULT=<needs.agent.result> APPLY_JOB_RESULT=<needs.apply.result> APPLY_COMMIT=<pushed SHA or empty>
-//   MUTATION_BACKEND_OUTCOME=<Stryker step outcome> MUTATION_FRONTEND_OUTCOME=<Stryker step outcome> RUN_URL=<workflow run URL>
+//   MUTATION_<PACKAGE>_OUTCOME=<Stryker step outcome> SUITE_<PACKAGE>_OUTCOME=<test suite step outcome>
+//   FILES_TO_MUTATE_<PACKAGE>=<files-to-mutate output> (for BACKEND and FRONTEND) RUN_URL=<workflow run URL>
 //   node tools/src/cli/report.ts <classification.json> <decision-log.json> <patch-validation.json> <mutation-dir> <report.md>
 // <decision-log.json> is the agent's untrusted structured output; it may be missing when the agent did not finish.
 // <patch-validation.json> may be missing when the apply job did not validate a patch.
@@ -38,9 +39,14 @@ function applyResult(jobResult: string | undefined, commit: string | undefined, 
   return { status: 'not_run' };
 }
 
-function mutationResult(outcome: string | undefined, reportPath: string): MutationResult {
+function mutationResult(pkg: 'BACKEND' | 'FRONTEND', reportPath: string): MutationResult {
+  const outcome = process.env[`MUTATION_${pkg}_OUTCOME`];
   if (outcome === 'failure') return { status: 'failed', reason: 'Stryker failed or timed out' };
-  if (outcome !== 'success') return { status: 'not_run' };
+  if (outcome !== 'success') {
+    if (process.env[`FILES_TO_MUTATE_${pkg}`] === '[]') return { status: 'no_files' };
+    if (process.env[`SUITE_${pkg}_OUTCOME`] === 'failure') return { status: 'suite_failed' };
+    return { status: 'not_run' };
+  }
   if (!existsSync(reportPath)) return { status: 'failed', reason: 'Stryker produced no report' };
 
   const parsed = parseMutationReport(readFileSync(reportPath, 'utf8'));
@@ -54,7 +60,7 @@ if (!runUrl) throw new Error('RUN_URL is not set');
 const agent = agentResult(process.env.AGENT_JOB_RESULT, decisionLogPath);
 const apply = applyResult(process.env.APPLY_JOB_RESULT, process.env.APPLY_COMMIT, validationPath);
 const mutation: MutationResults = {
-  backend: mutationResult(process.env.MUTATION_BACKEND_OUTCOME, `${mutationDir}/backend/mutation.json`),
-  frontend: mutationResult(process.env.MUTATION_FRONTEND_OUTCOME, `${mutationDir}/frontend/mutation.json`),
+  backend: mutationResult('BACKEND', `${mutationDir}/backend/mutation.json`),
+  frontend: mutationResult('FRONTEND', `${mutationDir}/frontend/mutation.json`),
 };
 writeFileSync(outputPath, renderReport({ classification, agent, apply, mutation, runUrl }));

@@ -179,7 +179,7 @@ The feature map (`.claude/skills/verify/features/`) has one recipe per todos fea
 
 The Verification Job runs the skill's `smoke-api.mjs` against the built backend and a Postgres service container, plus the frontend type-check and build. Either failing fails `test-agent/verify`.
 
-After posting the status, the Verification Job runs StrykerJS on the PR's changed source files in each package whose suite passed. The report shows the mutation score and surviving mutants as a warning, not a gate; the full HTML report is a `mutation-report-<package>` artifact.
+After posting the status, the Verification Job runs StrykerJS on the PR's changed source files in each package whose suite passed. The report shows the mutation score and surviving mutants as a warning, not a gate, or says why a package has no score; the full HTML report is a `mutation-report-<package>` artifact.
 
 ## GitHub setup
 
