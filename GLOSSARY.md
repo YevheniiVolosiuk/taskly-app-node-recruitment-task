@@ -17,7 +17,7 @@ An observable outcome of a module's public interface (return value, HTTP respons
 _Avoid_: implementation detail, internals
 
 **Skip**:
-A Test Agent decision not to write tests for a changed file, always recorded with a reason (no behavior change, non-logic file, already covered).
+A Test Agent decision not to write tests for a changed file, always recorded with a reason (no behavior change, non-logic file, already covered). The path rules the classification skips by are listed in `docs/skip-rules.md`.
 _Avoid_: ignore, exclusion
 
 **Candidate**:
