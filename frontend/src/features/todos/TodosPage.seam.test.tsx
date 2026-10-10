@@ -204,6 +204,33 @@ it('shows no matching tasks, without a create button, when the search finds noth
   ).not.toBeInTheDocument()
 })
 
+it('opens the new task editor from the header and closes it on Cancel', async () => {
+  const { user } = setup({ 'GET /api/todos': list([active]) })
+  await screen.findByRole('heading', { name: 'Prepare a demo' })
+  await user.click(screen.getByRole('button', { name: 'New task' }))
+  const dialog = await screen.findByRole('dialog', { name: 'New task' })
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+  )
+})
+
+it('closes the delete dialog on Cancel without deleting', async () => {
+  const { user, fetch } = setup({ 'GET /api/todos': list([active]) })
+  await user.click(
+    await screen.findByRole('button', { name: 'Delete: Prepare a demo' }),
+  )
+  const dialog = await screen.findByRole('dialog', { name: 'Delete task?' })
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+  )
+  expect(fetch).not.toHaveBeenCalledWith(
+    '/api/todos/7',
+    expect.objectContaining({ method: 'DELETE' }),
+  )
+})
+
 it('asks the server for overdue tasks when Overdue is chosen', async () => {
   const { user, fetch } = setup({
     'GET /api/todos': list([active]),
