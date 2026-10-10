@@ -171,6 +171,15 @@ jobs:
         id: clock
         run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
 
+      # The subprocess scrub below isolates subprocesses with bubblewrap. The runner image lacks it and blocks the
+      # unprivileged user namespaces it needs; the bwrap call fails here instead of inside the agent.
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / true
+
       # On pull requests the action restores .claude/ from the base branch, so the PR cannot rewrite the agent's rules.
       - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         id: agent
