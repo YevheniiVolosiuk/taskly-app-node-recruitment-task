@@ -62,3 +62,22 @@ it('answers 204 with no body on DELETE of an existing id', async () => {
   expect(response.text).toBe('');
   expect(todoDelegate.deleteMany).toHaveBeenCalledWith({ where: { id: 1 } });
 });
+
+it('answers 422 to GET list with an unknown status without querying', async () => {
+  const findMany = vi.fn().mockResolvedValue([]);
+  const response = await request(setup({ findMany }).app).get('/api/todos?status=late');
+  expect(response.status).toBe(422);
+  expect(findMany).not.toHaveBeenCalled();
+});
+it.each(['active', 'completed', 'overdue'])('answers 200 to GET list with status=%s', async (status) => {
+  const { app } = setup({ findMany: vi.fn().mockResolvedValue([record]) });
+  const response = await request(app).get(`/api/todos?status=${status}`);
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual([todo]);
+});
+it('lists every task when no status is given', async () => {
+  const findMany = vi.fn().mockResolvedValue([record]);
+  const response = await request(setup({ findMany }).app).get('/api/todos');
+  expect(response.status).toBe(200);
+  expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }));
+});

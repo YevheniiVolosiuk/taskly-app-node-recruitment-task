@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createSchema, updateSchema, idSchema, todoSchema } from '../src/features/todos/validators.ts';
+import { createSchema, updateSchema, idSchema, todoSchema, listQuerySchema } from '../src/features/todos/validators.ts';
 import { todo } from './fixture.ts';
 
 describe('todo validation', () => {
@@ -36,5 +36,14 @@ describe('todo validation', () => {
     expect(idSchema.parse('12')).toBe(12);
     expect(todoSchema.parse(todo)).toEqual(todo);
     expect(todoSchema.safeParse({ ...todo, created_at: 'yesterday' }).success).toBe(false);
+  });
+  it.each(['active', 'completed', 'overdue'])('accepts list status %s', (status) => {
+    expect(listQuerySchema.parse({ status })).toEqual({ status });
+  });
+  it('accepts a list query without status', () => {
+    expect(listQuerySchema.parse({})).toEqual({});
+  });
+  it.each(['late', '', 'ACTIVE'])('rejects list status %j', (status) => {
+    expect(listQuerySchema.safeParse({ status }).success).toBe(false);
   });
 });

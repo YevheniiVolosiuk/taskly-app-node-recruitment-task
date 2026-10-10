@@ -203,3 +203,36 @@ it('shows no matching tasks, without a create button, when the search finds noth
     screen.queryByRole('button', { name: 'Add your first task' }),
   ).not.toBeInTheDocument()
 })
+
+it('asks the server for overdue tasks when Overdue is chosen', async () => {
+  const { user, fetch } = setup({
+    'GET /api/todos': list([active]),
+    'GET /api/todos?status=overdue': list([]),
+  })
+  await screen.findByRole('heading', { name: 'Prepare a demo' })
+  await user.selectOptions(screen.getByLabelText('Status'), 'overdue')
+  expect(
+    await screen.findByRole('heading', { name: 'No matching tasks' }),
+  ).toBeVisible()
+  expect(fetch).toHaveBeenCalledWith(
+    '/api/todos?status=overdue',
+    expect.anything(),
+  )
+})
+
+it('drops a task completed in the Overdue view once the server list is refetched', async () => {
+  const late = { ...active, due_date: '2020-01-01' }
+  const { user } = setup({
+    'GET /api/todos': list([late]),
+    'GET /api/todos?status=overdue': [list([late]), list([])],
+    'PATCH /api/todos/7': () => Response.json({ ...late, completed: true }),
+  })
+  await screen.findByRole('heading', { name: 'Prepare a demo' })
+  await user.selectOptions(screen.getByLabelText('Status'), 'overdue')
+  await user.click(
+    await screen.findByRole('checkbox', { name: 'Complete: Prepare a demo' }),
+  )
+  expect(
+    await screen.findByRole('heading', { name: 'No matching tasks' }),
+  ).toBeVisible()
+})
