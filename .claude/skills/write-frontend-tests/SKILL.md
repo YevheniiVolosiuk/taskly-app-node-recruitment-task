@@ -9,8 +9,8 @@ Input: a Behavior list from `derive-behaviors`, each Behavior tagged with its se
 
 ## Steps
 
-1. Read the Frontend section of `docs/test-seams.md`, `frontend/src/test/todoFixture.ts`, `frontend/src/lib/http.ts` (what each status turns into), `frontend/src/design-system/mocks.tsx` for a component (the elements your queries match), and the existing test closest to the module. Match their style: a local `setup()` per file, top-level `it`, fixtures before new literals.
-2. Pick the file, next to the module: `<Module>.test.tsx` when the test renders JSX (any component, any hook wrapper), otherwise `<Module>.test.ts`. When it exists and has no `vi.mock` besides the design system, update it in place: replace a test whose Behavior changed, add tests for new Behaviors, keep the rest. When it mocks any other module, its mocks would apply to your tests too, so write yours in `<Module>.seam.test.tsx` beside it; the existing file keeps its tests.
+1. Read the Frontend section of `docs/test-seams.md`, `frontend/src/test/todoFixture.ts`, `frontend/src/lib/http.ts` (what each status turns into), and the existing test closest to the module. Match their style: a local `setup()` per file, top-level `it`, fixtures before new literals.
+2. Pick the file, next to the module: `<Module>.test.tsx` when the test renders JSX (any component, any hook wrapper), otherwise `<Module>.test.ts`. When it exists and has no `vi.mock`, update it in place: replace a test whose Behavior changed, add tests for new Behaviors, keep the rest. When it mocks any module, its mocks would apply to your tests too, so write yours in `<Module>.seam.test.tsx` beside it; the existing file keeps its tests.
 3. Write one `it` per Behavior. The title is the Behavior in plain words. The body drives the seam's call and asserts the observable outcome: what the user sees, the hook's returned state, the query cache, the request that reached `fetch`, or a callback prop called. Expected values are literals from the Behavior's source; a value recomputed with the code under test is a tautology that passes over any bug.
 4. Fake only what the seam table lists; app hooks, `todosApi`, `request`, and child components run for real. Callback props are `vi.fn()`.
 
@@ -64,7 +64,7 @@ A hook with no React Query calls renders without the wrapper.
 
 ## Components seam
 
-Render inside `AppProviders` from `src/app/AppProviders.tsx` with the test's `QueryClient`, and swap the design system for its mocks. Drive the component with `userEvent`, query by role and accessible name, and await what appears after a request with `findBy*` or `waitFor`.
+Render inside `AppProviders` from `src/app/AppProviders.tsx` with the test's `QueryClient`. Drive the component with `userEvent`, query by role and accessible name, and await what appears after a request with `findBy*` or `waitFor`.
 
 `DeleteTodoDialog.seam.test.tsx`, since `DeleteTodoDialog.test.tsx` mocks `useDeleteTodoMutation`:
 
@@ -76,8 +76,6 @@ import { expect, it, vi } from 'vitest'
 import { AppProviders } from '../../../app/AppProviders'
 import { todoFixture } from '../../../test/todoFixture'
 import { DeleteTodoDialog } from './DeleteTodoDialog'
-
-vi.mock('../../../design-system', () => import('../../../design-system/mocks'))
 
 function setup(response: Response) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))

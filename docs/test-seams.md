@@ -20,12 +20,10 @@ HTTP is the seam for routing, status codes, error handling (unknown routes, malf
 
 ## Frontend (`frontend/`)
 
-Tests sit next to the file they cover as `<Module>.test.ts` or `<Module>.test.tsx`, run by Vitest with jsdom. When that file mocks an app module, new tests go in `<Module>.seam.test.tsx` beside it, out of reach of those mocks. Shared literals live in `frontend/src/test/`.
+Tests sit next to the file they cover as `<Module>.test.ts` or `<Module>.test.tsx`, run by Vitest with jsdom. When that file mocks a module, new tests go in `<Module>.seam.test.tsx` beside it, out of reach of those mocks. Shared literals live in `frontend/src/test/`.
 
 | Seam | Call | Fake |
 | --- | --- | --- |
 | Hooks | `renderHook` with a new `QueryClient` in a `QueryClientProvider` wrapper | `fetch`, via `vi.stubGlobal` |
-| Components | React Testing Library render inside `AppProviders` with a new `QueryClient`, driven by `user-event` | `fetch`, via `vi.stubGlobal`; the design system, via `vi.mock` of `design-system` with `design-system/mocks` |
+| Components | React Testing Library render inside `AppProviders` with a new `QueryClient`, driven by `user-event` | `fetch`, via `vi.stubGlobal` |
 | Pure utilities | direct call | none |
-
-The design system is the one module a component test replaces: it is excluded from coverage, and its `Drawer` calls `dialog.showModal`, which jsdom does not implement.
