@@ -161,6 +161,8 @@ npm test
 
 The `verify` skill (`.claude/skills/verify/SKILL.md`) launches an isolated stack, drives the todos API and UI like a user, and keeps evidence in `.verify/evidence/<run-id>/`. In Claude Code, ask it to verify a todos change. Its helper scripts also run by hand.
 
+The feature map (`.claude/skills/verify/features/`) has one recipe per todos feature. Update it in the same PR as any change to the todos UI or API. With the pstack plugin installed, `/maintain-verification-skill` audits the map against the running app.
+
 The Verification Job runs the skill's `smoke-api.mjs` against the built backend and a Postgres service container, plus the frontend type-check and build. Either failing fails `test-agent/verify`.
 
 ## GitHub setup
