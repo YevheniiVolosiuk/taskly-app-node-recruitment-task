@@ -1,20 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { patchTodoLists } from '../api/patchTodoLists'
 import { todoKeys } from '../api/queryKeys'
 import { todosApi } from '../api/todos'
-import type { Todo } from '../types'
 
 export function useDeleteTodoMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationKey: todoKeys.delete,
     mutationFn: (id: number) => todosApi.remove(id),
-    onSuccess: async (_, id) => {
-      await queryClient.cancelQueries({ queryKey: todoKeys.lists })
-      queryClient.setQueriesData<Todo[]>(
-        { queryKey: todoKeys.lists },
-        (current) => current?.filter((todo) => todo.id !== id),
-      )
-      void queryClient.invalidateQueries({ queryKey: todoKeys.lists })
-    },
+    onSuccess: (_, id) =>
+      patchTodoLists(queryClient, (todos) =>
+        todos.filter((todo) => todo.id !== id),
+      ),
   })
 }

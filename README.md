@@ -41,6 +41,12 @@ Storybook — http://localhost:6006:
 npm run storybook
 ```
 
+API types — regenerate `src/generated/api.d.ts` after changing `backend/openapi.json`. A test fails while they differ:
+
+```sh
+npm run gen:api
+```
+
 Tests:
 
 ```sh

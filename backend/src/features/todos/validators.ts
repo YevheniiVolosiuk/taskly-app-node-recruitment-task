@@ -19,9 +19,8 @@ export const updateSchema = z.strictObject(fields).partial().refine(
   (value) => Object.keys(value).length > 0,
   'Provide at least one field to update.',
 );
-export const listQuerySchema = z.object({
-  status: z.enum(['active', 'completed', 'overdue']).optional(),
-});
+export const todoStatuses = ['active', 'completed', 'overdue'] as const;
+export const listQuerySchema = z.object({ status: z.enum(todoStatuses).optional() });
 export const idSchema = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const todoSchema = createSchema.extend({
   id: z.number().int().positive(),
