@@ -1,5 +1,6 @@
 import type { Classification } from './classify.ts';
 import type { Decision, DecisionLog, FileLog } from './decision-log.ts';
+import { mutationPackages, type MutationPackage, type MutationSummary, type Survivor } from './mutation.ts';
 import type { PatchRejection } from './patch.ts';
 
 export type AgentResult =
@@ -14,10 +15,18 @@ export type ApplyResult =
   | { status: 'rejected'; rejected: readonly PatchRejection[] }
   | { status: 'failed' };
 
+export type MutationResult =
+  | { status: 'not_run' }
+  | { status: 'failed'; reason: string }
+  | { status: 'completed'; summary: MutationSummary };
+
+export type MutationResults = Record<MutationPackage, MutationResult>;
+
 export type ReportInput = {
   classification: Classification;
   agent: AgentResult;
   apply: ApplyResult;
+  mutation: MutationResults;
   runUrl: string;
 };
 
@@ -33,6 +42,7 @@ const COMMENT_LIMIT = 65_536;
 // Room for headings, collapsible wrappers, and omission notes, which the budget does not count.
 const FIXED_TEXT_ALLOWANCE = 2_000;
 const COLLAPSED_TABLE_ROWS = 20;
+const REPLACEMENT_LENGTH = 60;
 
 // File names come from the PR, so render them as a code span: HTML and markdown stay inert,
 // and the fence is longer than any backtick run inside the name. Table cells also need `|` escaped.
@@ -115,8 +125,8 @@ function table(budget: Budget, rows: readonly Row[]): string[] {
   return rows.length > COLLAPSED_TABLE_ROWS ? collapsible(`Decisions for ${rows.length} changed files`, lines) : lines;
 }
 
-function omittedNote(omitted: number, noun: string): string[] {
-  return omitted > 0 ? [`_${plural(omitted, noun)} not shown; see the Decision Log artifact._`, ''] : [];
+function omittedNote(omitted: number, noun: string, artifact = 'Decision Log'): string[] {
+  return omitted > 0 ? [`_${plural(omitted, noun)} not shown; see the ${artifact} artifact._`, ''] : [];
 }
 
 function suspectedBugs(budget: Budget, logs: readonly FileLog[]): string[] {
@@ -157,6 +167,60 @@ function applied(budget: Budget, apply: ApplyResult): string[] {
   }
 }
 
+// Mutated code comes from the PR: one line, shortened, rendered as a code span.
+function oneLineCode(code: string): string {
+  const line = code.replace(/\s+/g, ' ').trim();
+  return line.length > REPLACEMENT_LENGTH ? `${line.slice(0, REPLACEMENT_LENGTH)}…` : line;
+}
+
+function survivorLine(pkg: MutationPackage, { file, line, column, mutator, replacement, status }: Survivor): string {
+  const change = replacement === null ? '' : `: ${codeSpan(oneLineCode(replacement))}`;
+  const uncovered = status === 'NoCoverage' ? ' (no test covers it)' : '';
+  return `- ${codeSpan(`${pkg}/${file}:${line}:${column}`)} ${mutator}${change}${uncovered}`;
+}
+
+function mutationTesting(budget: Budget, mutation: MutationResults): string[] {
+  const completed = mutationPackages.flatMap((pkg) => {
+    const result = mutation[pkg];
+    return result.status === 'completed' ? [{ pkg, summary: result.summary }] : [];
+  });
+  const failed = mutationPackages.flatMap((pkg) => {
+    const result = mutation[pkg];
+    return result.status === 'failed' ? [`_Mutation testing failed for ${pkg}: ${result.reason}._`, ''] : [];
+  });
+  if (completed.length === 0 && failed.length === 0) return [];
+
+  const scores = completed.map(({ pkg, summary: { score, detected, survived, noCoverage } }) => {
+    const percent = score === null ? 'n/a' : `${score.toFixed(2)}%`;
+    return `| ${pkg} | ${percent} | ${detected} | ${survived} | ${noCoverage} |`;
+  });
+  const scoreTable =
+    scores.length === 0
+      ? []
+      : ['| Package | Mutation score | Detected | Survived | No coverage |', '| --- | --- | --- | --- | --- |', ...scores, ''];
+
+  const survivors = completed.flatMap(({ pkg, summary }) => summary.survivors.map((survivor) => survivorLine(pkg, survivor)));
+  const { kept, omitted } = fit(budget, survivors);
+  const list =
+    survivors.length === 0
+      ? []
+      : collapsible(plural(survivors.length, 'surviving mutant'), [
+          ...kept,
+          '',
+          ...omittedNote(omitted, 'more surviving mutant', 'mutation report'),
+        ]);
+
+  return [
+    '### Mutation testing',
+    '',
+    'Mutation score of the changed source files. A warning, not a gate: it does not change `test-agent/verify`.',
+    '',
+    ...scoreTable,
+    ...failed,
+    ...list,
+  ];
+}
+
 function listSection(title: string, items: readonly string[]): string[] {
   return items.length === 0 ? [] : [`${title}:`, '', ...items.map((item) => `- ${codeSpan(item)}`), ''];
 }
@@ -180,7 +244,7 @@ function behaviorsAndTests(budget: Budget, logs: readonly FileLog[]): string[] {
   return collapsible('Behaviors and tests', [...kept, ...omittedNote(omitted, 'more file')]);
 }
 
-export function renderReport({ classification, agent, apply, runUrl }: ReportInput): string {
+export function renderReport({ classification, agent, apply, mutation, runUrl }: ReportInput): string {
   const rows = toRows(classification, agent);
   const logs = rows.flatMap((row) => (row.log ? [row.log] : []));
   const summary = agent.status === 'succeeded' ? [escapeMarkdown(agent.log.summary), ''] : [];
@@ -198,7 +262,17 @@ export function renderReport({ classification, agent, apply, runUrl }: ReportInp
   const applyLines = applied(budget, apply);
   const bugs = suspectedBugs(budget, logs);
   const decisions = table(budget, rows);
+  const mutationLines = mutationTesting(budget, mutation);
   const details = behaviorsAndTests(budget, logs);
 
-  return [...head, ...applyLines, ...decisions, ...bugs, ...details, `[Workflow run](${runUrl})`, ''].join('\n');
+  return [
+    ...head,
+    ...applyLines,
+    ...decisions,
+    ...mutationLines,
+    ...bugs,
+    ...details,
+    `[Workflow run](${runUrl})`,
+    '',
+  ].join('\n');
 }

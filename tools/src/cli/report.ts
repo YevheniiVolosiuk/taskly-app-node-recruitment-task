@@ -1,16 +1,21 @@
 // Usage: AGENT_JOB_RESULT=<needs.agent.result> APPLY_JOB_RESULT=<needs.apply.result> APPLY_COMMIT=<pushed SHA or empty>
-//   RUN_URL=<workflow run URL> node tools/src/cli/report.ts <classification.json> <decision-log.json> <patch-validation.json> <report.md>
+//   MUTATION_BACKEND_OUTCOME=<Stryker step outcome> MUTATION_FRONTEND_OUTCOME=<Stryker step outcome> RUN_URL=<workflow run URL>
+//   node tools/src/cli/report.ts <classification.json> <decision-log.json> <patch-validation.json> <mutation-dir> <report.md>
 // <decision-log.json> is the agent's untrusted structured output; it may be missing when the agent did not finish.
 // <patch-validation.json> may be missing when the apply job did not validate a patch.
+// <mutation-dir>/<package>/mutation.json is Stryker's report from a run of the PR's code; it may be missing.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Classification } from '../classify.ts';
 import { parseDecisionLog } from '../decision-log.ts';
+import { parseMutationReport } from '../mutation.ts';
 import type { PatchValidation } from '../patch.ts';
-import { renderReport, type AgentResult, type ApplyResult } from '../report.ts';
+import { renderReport, type AgentResult, type ApplyResult, type MutationResult, type MutationResults } from '../report.ts';
 
-const [classificationPath, decisionLogPath, validationPath, outputPath] = process.argv.slice(2);
-if (!classificationPath || !decisionLogPath || !validationPath || !outputPath) {
-  throw new Error('usage: report.ts <classification.json> <decision-log.json> <patch-validation.json> <report.md>');
+const [classificationPath, decisionLogPath, validationPath, mutationDir, outputPath] = process.argv.slice(2);
+if (!classificationPath || !decisionLogPath || !validationPath || !mutationDir || !outputPath) {
+  throw new Error(
+    'usage: report.ts <classification.json> <decision-log.json> <patch-validation.json> <mutation-dir> <report.md>',
+  );
 }
 
 function agentResult(jobResult: string | undefined, logPath: string): AgentResult {
@@ -33,10 +38,23 @@ function applyResult(jobResult: string | undefined, commit: string | undefined, 
   return { status: 'not_run' };
 }
 
+function mutationResult(outcome: string | undefined, reportPath: string): MutationResult {
+  if (outcome === 'failure') return { status: 'failed', reason: 'Stryker failed or timed out' };
+  if (outcome !== 'success') return { status: 'not_run' };
+  if (!existsSync(reportPath)) return { status: 'failed', reason: 'Stryker produced no report' };
+
+  const parsed = parseMutationReport(readFileSync(reportPath, 'utf8'));
+  return parsed.ok ? { status: 'completed', summary: parsed.summary } : { status: 'failed', reason: `invalid report: ${parsed.error}` };
+}
+
 const classification = JSON.parse(readFileSync(classificationPath, 'utf8')) as Classification;
 const runUrl = process.env.RUN_URL;
 if (!runUrl) throw new Error('RUN_URL is not set');
 
 const agent = agentResult(process.env.AGENT_JOB_RESULT, decisionLogPath);
 const apply = applyResult(process.env.APPLY_JOB_RESULT, process.env.APPLY_COMMIT, validationPath);
-writeFileSync(outputPath, renderReport({ classification, agent, apply, runUrl }));
+const mutation: MutationResults = {
+  backend: mutationResult(process.env.MUTATION_BACKEND_OUTCOME, `${mutationDir}/backend/mutation.json`),
+  frontend: mutationResult(process.env.MUTATION_FRONTEND_OUTCOME, `${mutationDir}/frontend/mutation.json`),
+};
+writeFileSync(outputPath, renderReport({ classification, agent, apply, mutation, runUrl }));

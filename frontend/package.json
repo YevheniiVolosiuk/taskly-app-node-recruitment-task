@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:mutation": "stryker run",
     "format": "prettier --write src .storybook vite.config.ts tsconfig.json package.json index.html",
     "format:check": "prettier --check src .storybook vite.config.ts tsconfig.json package.json index.html"
   },
@@ -28,6 +29,8 @@
   },
   "devDependencies": {
     "@storybook/react-vite": "10.6.1",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",

@@ -53,6 +53,12 @@ Coverage — `frontend/coverage/index.html`:
 npm run test:coverage
 ```
 
+Mutation testing (StrykerJS) — `frontend/reports/mutation/mutation.html`. Set `STRYKER_MUTATE` to a JSON array of files to mutate only those:
+
+```sh
+npm run test:mutation
+```
+
 ## Backend
 
 Node.js + TypeScript + Express. Database: PostgreSQL + Prisma ORM. Tests: Vitest + Supertest.
@@ -135,13 +141,21 @@ Coverage — `backend/coverage/index.html`:
 npm run test:coverage
 ```
 
+Mutation testing (StrykerJS) — `backend/reports/mutation/mutation.html`. Set `STRYKER_MUTATE` to a JSON array of files to mutate only those:
+
+```sh
+npm run test:mutation
+```
+
 ## Test Agent tools
 
 TypeScript helpers for the Test Agent PR workflow (`.github/workflows/test-agent.yml`). Tests: Vitest. Node.js >=24 runs the CLIs directly, no build step.
 
 - `classifyChanges` — sorts changed files into Test Agent candidates and Skips, each with a reason; stops for drafts, fork PRs, and the `skip-test-agent` label.
 - `parseDecisionLog` — validates the Test Agent's structured output (the Decision Log) against its schema, size limits, and markup rules.
-- `renderReport` — renders the sticky PR comment and job summary: verdict, per-file decisions, Suspected Bugs, and collapsible Behaviors and tests, kept under GitHub's comment limit.
+- `filesToMutate` — lists the changed source files Stryker mutates in each package: candidates, never tests or Skipped files.
+- `parseMutationReport` — validates Stryker's JSON report and computes the mutation score and surviving mutants.
+- `renderReport` — renders the sticky PR comment and job summary: verdict, per-file decisions, mutation score per package with collapsible surviving mutants, Suspected Bugs, and collapsible Behaviors and tests, kept under GitHub's comment limit.
 
 Installation:
 
@@ -164,6 +178,8 @@ The `verify` skill (`.claude/skills/verify/SKILL.md`) launches an isolated stack
 The feature map (`.claude/skills/verify/features/`) has one recipe per todos feature. Update it in the same PR as any change to the todos UI or API. With the pstack plugin installed, `/maintain-verification-skill` audits the map against the running app.
 
 The Verification Job runs the skill's `smoke-api.mjs` against the built backend and a Postgres service container, plus the frontend type-check and build. Either failing fails `test-agent/verify`.
+
+After posting the status, the Verification Job runs StrykerJS on the PR's changed source files in each package whose suite passed. The report shows the mutation score and surviving mutants as a warning, not a gate; the full HTML report is a `mutation-report-<package>` artifact.
 
 ## GitHub setup
 

@@ -29,3 +29,7 @@ coverage/
 # Verify skill runs (state and evidence)
 .verify/
 .playwright-cli/
+
+# Mutation testing
+.stryker-tmp/
+reports/mutation/
