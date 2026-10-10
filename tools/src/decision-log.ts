@@ -30,6 +30,19 @@ const limits = {
   attempts: 3,
 };
 
+// Each Skip reason fills in the template of a rule a skill defines, so a Skip cannot rest on a made-up reason.
+export const skipReasons = [
+  'no agreed seam: <what is missing>',
+  'no behavior change: <what changed>',
+  'could not write a passing test in 3 attempts: <error>',
+  'tests could not run: <error>',
+  'already covered: <test file> > <test name>',
+] as const;
+
+const skipReason = new RegExp(
+  `^(?:${skipReasons.map((template) => template.replace('<test file>', '\\S+').replace(/<[^>]+>/g, '.+')).join('|')})$`,
+);
+
 type UnsafeText = { pattern: RegExp; label: string };
 
 // Paths, Behaviors, and tests render as code spans, where markup is inert: refuse only what breaks or disguises a line.
@@ -58,7 +71,8 @@ export const decisionLogSchema = {
   description:
     `The Test Agent Decision Log, under ${limits.input} characters in total. ` +
     'summary and reason are plain text: no HTML, markdown links or images, URLs, or @mentions. ' +
-    'No field may contain line breaks or control characters.',
+    'No field may contain line breaks or control characters. ' +
+    `A skipped file reason fills in one of these templates: ${skipReasons.join(' | ')}`,
   type: 'object',
   additionalProperties: false,
   required: ['summary', 'files'],
@@ -79,6 +93,8 @@ export const decisionLogSchema = {
           tests: { type: 'array', maxItems: limits.tests, items: text(limits.item, unsafeCode) },
           attempts: { type: 'integer', minimum: 0, maximum: limits.attempts },
         },
+        if: { properties: { decision: { const: 'skipped' } } },
+        then: { properties: { reason: { type: 'string', pattern: skipReason.source } } },
       },
     },
   },
@@ -129,10 +145,15 @@ function fileLog(value: unknown, field: string): FileLog {
     throw new InvalidLog(`${field}.attempts is not an integer from 0 to ${limits.attempts}`);
   }
 
+  const reason = boundedString(entry.reason, `${field}.reason`, limits.reason, unsafeProse);
+  if (decision === 'skipped' && !skipReason.test(reason)) {
+    throw new InvalidLog(`${field}.reason does not fill in a Skip reason template`);
+  }
+
   return {
     path,
     decision,
-    reason: boundedString(entry.reason, `${field}.reason`, limits.reason, unsafeProse),
+    reason,
     behaviors: boundedArray(entry.behaviors, `${field}.behaviors`, limits.behaviors).map((item, i) =>
       boundedString(item, `${field}.behaviors[${i}]`, limits.item, unsafeCode),
     ),
