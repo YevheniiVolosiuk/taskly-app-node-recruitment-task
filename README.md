@@ -153,9 +153,11 @@ TypeScript helpers for the Test Agent PR workflow (`.github/workflows/test-agent
 
 - `classifyChanges` — sorts changed files into Test Agent candidates and Skips, each with a reason; stops for drafts, fork PRs, and the `skip-test-agent` label.
 - `parseDecisionLog` — validates the Test Agent's structured output (the Decision Log) against its schema, size limits, and markup rules.
+- `agentResult` — turns the agent step's outcome, the action's final result message, and the Decision Log into the agent's result, naming why a failed agent stopped: timeout, turn cap, API error, or invalid Decision Log.
 - `filesToMutate` — lists the changed source files Stryker mutates in each package: candidates, never tests or Skipped files.
 - `parseMutationReport` — validates Stryker's JSON report and computes the mutation score and surviving mutants.
-- `renderReport` — renders the sticky PR comment and job summary: verdict, per-file decisions, mutation score per package with collapsible surviving mutants, Suspected Bugs, and collapsible Behaviors and tests, kept under GitHub's comment limit.
+- `parseCoverageSummary` — validates Vitest's `json-summary` coverage report and reads line and branch coverage per file.
+- `renderReport` — renders the sticky PR comment and job summary: verdict, per-file decisions, Evidence (coverage change of the changed source files, mutation score per package with collapsible surviving mutants), Suspected Bugs, and collapsible Behaviors and tests, kept under GitHub's comment limit.
 
 Installation:
 
@@ -178,6 +180,12 @@ The `verify` skill (`.claude/skills/verify/SKILL.md`) launches an isolated stack
 The feature map (`.claude/skills/verify/features/`) has one recipe per todos feature. Update it in the same PR as any change to the todos UI or API. With the pstack plugin installed, `/maintain-verification-skill` audits the map against the running app.
 
 The Verification Job runs the skill's `smoke-api.mjs` against the built backend and a Postgres service container, plus the frontend type-check and build. Either failing fails `test-agent/verify`.
+
+When the Test Agent fails (timeout, turn cap, API error, invalid Decision Log), nothing is applied, the Verification Job still runs on the PR head, and the report says `Test Agent failed: <reason>`.
+
+The report's coverage change compares each changed source file's line and branch coverage at the merge base (the `baseline` job) with the verified commit.
+
+To re-run a PR Run, use "Re-run all jobs", or dispatch the workflow with the pull request number (`gh workflow run test-agent.yml -f pull-request=<number>`); a dispatch takes the pull request's current head and refuses fork PRs. Each PR Run tests the full base...head diff and updates earlier agent tests in place; it commits nothing when the tests did not change.
 
 After posting the status, the Verification Job runs StrykerJS on the PR's changed source files in each package whose suite passed. The report shows the mutation score and surviving mutants as a warning, not a gate, or says why a package has no score; the full HTML report is a `mutation-report-<package>` artifact.
 

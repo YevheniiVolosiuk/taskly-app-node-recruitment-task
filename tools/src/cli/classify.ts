@@ -1,7 +1,7 @@
 // Usage: node tools/src/cli/classify.ts <changed-files> <pull-request.json> <classification.json>
 // <changed-files> holds NUL-separated paths (git diff --name-only -z). <pull-request.json> is the
 // live pull request from the REST API, so re-runs see current labels and draft state.
-// The run-agent output goes to GITHUB_OUTPUT.
+// The run-agent and candidates outputs go to GITHUB_OUTPUT.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { classifyChanges, pullRequestContext, type PullRequest } from '../classify.ts';
 
@@ -16,4 +16,5 @@ const classification = classifyChanges(changedFiles, pullRequestContext(pullRequ
 writeFileSync(outputPath, JSON.stringify(classification, null, 2));
 
 const runAgent = classification.files.some((file) => file.decision === 'pending');
-if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `run-agent=${runAgent}\n`);
+const candidates = classification.files.some((file) => file.decision !== 'skipped');
+if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `run-agent=${runAgent}\ncandidates=${candidates}\n`);

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { classifyChanges } from '../src/classify.ts';
 import type { DecisionLog, FileLog } from '../src/decision-log.ts';
 import type { MutationSummary, Survivor } from '../src/mutation.ts';
-import { renderReport, type AgentResult, type ApplyResult, type MutationResults } from '../src/report.ts';
+import { renderReport, type AgentResult, type ApplyResult, type CoverageDelta, type MutationResults } from '../src/report.ts';
 
 const openPr = { labels: [], draft: false, isFork: false };
 const notRun: AgentResult = { status: 'not_run' };
@@ -11,6 +11,7 @@ const router = 'backend/src/features/todos/router.ts';
 const health = 'backend/src/api/health.ts';
 const runUrl = 'https://github.com/owner/repo/actions/runs/1';
 const noMutation: MutationResults = { backend: { status: 'not_run' }, frontend: { status: 'not_run' } };
+const noCoverage: CoverageDelta = { base: null, final: null };
 
 function succeeded(summary: string, files: FileLog[]): AgentResult {
   const log: DecisionLog = { summary, files };
@@ -53,7 +54,7 @@ describe('renderReport', () => {
   it('says every file was Skipped, and why, for a docs-only pull request', () => {
     const classification = classifyChanges(['README.md', 'docs/adr/0004-x.md'], openPr);
 
-    expect(renderReport({ classification, agent: notRun, apply: notApplied, mutation: noMutation, runUrl })).toBe(
+    expect(renderReport({ classification, agent: notRun, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl })).toBe(
       [
         '<!-- test-agent-report -->',
         '## Test Agent',
@@ -75,7 +76,7 @@ describe('renderReport', () => {
     const classification = classifyChanges(['README.md', router], openPr);
     const agent = succeeded('Added 1 test for the todos router.', [entry(router)]);
 
-    const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('**Test Agent wrote tests for 1 of 2 changed files.**');
     expect(report).toContain('Added 1 test for the todos router\\.');
@@ -110,7 +111,7 @@ describe('renderReport', () => {
     const classification = classifyChanges(['README.md', router], openPr);
     const skip = entry(router, { decision: 'skipped', reason: 'Pure refactor', behaviors: [], tests: [], attempts: 0 });
 
-    const report = renderReport({ classification, agent: succeeded('No Behavior changed.', [skip]), apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: succeeded('No Behavior changed.', [skip]), apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('**Test Agent skipped: all 2 changed files were Skipped.**');
     expect(tableRows(report)).toContain('| `backend/src/features/todos/router.ts` | `skipped` | Pure refactor |');
@@ -125,7 +126,7 @@ describe('renderReport', () => {
       attempts: 2,
     });
 
-    const report = renderReport({ classification, agent: succeeded('1 Suspected Bug.', [bug, entry(router)]), apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: succeeded('1 Suspected Bug.', [bug, entry(router)]), apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('**Test Agent wrote tests for 1 of 2 changed files and found 1 Suspected Bug.**');
     expect(tableRows(report)[0]).toMatch(/^\| `backend\/src\/api\/health\.ts` \| `suspected_bug` \| /);
@@ -141,17 +142,34 @@ describe('renderReport', () => {
   it('gives a failure verdict and marks candidates not run when the agent failed', () => {
     const classification = classifyChanges(['README.md', router], openPr);
 
-    const report = renderReport({ classification, agent: { status: 'failed', reason: 'the agent job failed' }, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: { status: 'failed', reason: 'the agent job failed' }, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('**Test Agent failed: the agent job failed.**');
     expect(tableRows(report)).toContain('| `backend/src/features/todos/router.ts` | `not_run` | Backend logic |');
+    expect(report).toContain(`[Workflow run](${runUrl})`);
+  });
+
+  it('gives a failure verdict with a run link when the changed files could not be classified', () => {
+    const report = renderReport({ classification: null, agent: notRun, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
+
+    expect(report).toBe(
+      [
+        '<!-- test-agent-report -->',
+        '## Test Agent',
+        '',
+        '**Test Agent failed: the changed files could not be classified.**',
+        '',
+        `[Workflow run](${runUrl})`,
+        '',
+      ].join('\n'),
+    );
   });
 
   it('names the commit that carries the tests', () => {
     const classification = classifyChanges([router], openPr);
     const apply: ApplyResult = { status: 'committed', sha: '0123456789abcdef0123456789abcdef01234567' };
 
-    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('Committed the tests to this branch in 0123456789abcdef0123456789abcdef01234567.');
   });
@@ -160,7 +178,7 @@ describe('renderReport', () => {
     const classification = classifyChanges([router], openPr);
     const skip = entry(router, { decision: 'skipped', reason: 'Pure refactor', behaviors: [], tests: [], attempts: 0 });
 
-    const report = renderReport({ classification, agent: succeeded('No Behavior changed.', [skip]), apply: { status: 'no_changes' }, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: succeeded('No Behavior changed.', [skip]), apply: { status: 'no_changes' }, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('No test changes to commit.');
   });
@@ -175,7 +193,7 @@ describe('renderReport', () => {
       ],
     };
 
-    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain(
       [
@@ -192,7 +210,7 @@ describe('renderReport', () => {
   it('says nothing was pushed when committing the tests failed', () => {
     const classification = classifyChanges([router], openPr);
 
-    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply: { status: 'failed' }, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply: { status: 'failed' }, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('Committing the tests failed; nothing was pushed.');
   });
@@ -201,7 +219,7 @@ describe('renderReport', () => {
     const classification = classifyChanges([router], openPr);
     const rejected = Array.from({ length: 5_000 }, (_, index) => ({ path: `backend/src/${'x'.repeat(100)}${index}.ts`, reason: 'not a test path' }));
 
-    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply: { status: 'rejected', rejected }, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply: { status: 'rejected', rejected }, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report.length).toBeLessThanOrEqual(65_536);
     expect(report).toMatch(/_\d+ more rejected paths not shown\._/);
@@ -210,7 +228,7 @@ describe('renderReport', () => {
   it('marks a candidate missing from the Decision Log as not run', () => {
     const classification = classifyChanges([health, router], openPr);
 
-    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: succeeded('Tested the router.', [entry(router)]), apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(tableRows(report)).toContain('| `backend/src/api/health.ts` | `not_run` | Missing from the Decision Log |');
   });
@@ -223,7 +241,7 @@ describe('renderReport', () => {
       entry(router),
     ]);
 
-    const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(tableRows(report)).toEqual([
       '| `backend/src/features/todos/router.ts` | `tested` | New tests pass |',
@@ -239,14 +257,14 @@ describe('renderReport', () => {
   ])('gives an explicit agent-skipped verdict when stopped (%o)', (context, expected) => {
     const classification = classifyChanges([router], context);
 
-    const report = renderReport({ classification, agent: notRun, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: notRun, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain(expected);
     expect(report).toContain('| `backend/src/features/todos/router.ts` | `not_run` | Backend logic |');
   });
 
   it('says so when there are no changed files', () => {
-    const report = renderReport({ classification: classifyChanges([], openPr), agent: notRun, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification: classifyChanges([], openPr), agent: notRun, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('**Test Agent skipped: no changed files.**');
     expect(report).not.toContain('| File |');
@@ -256,7 +274,7 @@ describe('renderReport', () => {
     const classification = classifyChanges([router], openPr);
     const agent = succeeded('Tested.', [entry(router, { behaviors: ['resolves Promise<void> for <img src=x>'] })]);
 
-    const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('- `resolves Promise<void> for <img src=x>`');
   });
@@ -265,7 +283,7 @@ describe('renderReport', () => {
     const path = 'frontend/src/<img src=x onerror=alert(1)>|`x`\n| injected | row |.ts';
     const classification = classifyChanges([path], openPr);
 
-    const report = renderReport({ classification, agent: notRun, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent: notRun, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain(
       '| `` frontend/src/<img src=x onerror=alert(1)>\\|`x`�\\| injected \\| row \\|.ts `` | `skipped` | Not app source code |',
@@ -277,7 +295,7 @@ describe('renderReport', () => {
     const classification = classifyChanges([router], openPr);
     const agent = succeeded('**all** good', [entry(router, { reason: 'returns `x` | *y* & _z_ # 1. a@b.c' })]);
 
-    const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('\\*\\*all\\*\\* good');
     expect(tableRows(report)).toEqual([
@@ -288,7 +306,7 @@ describe('renderReport', () => {
   it('collapses a long decisions table', () => {
     const files = Array.from({ length: 21 }, (_, i) => `docs/page-${i}.md`);
 
-    const report = renderReport({ classification: classifyChanges(files, openPr), agent: notRun, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification: classifyChanges(files, openPr), agent: notRun, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report).toContain('<details>\n<summary>Decisions for 21 changed files</summary>\n\n| File | Decision | Reason |');
     expect(tableRows(report)).toHaveLength(21);
@@ -297,7 +315,7 @@ describe('renderReport', () => {
   it('stays within the GitHub comment limit for a huge pull request', () => {
     const files = Array.from({ length: 5000 }, (_, i) => `docs/${'deep/'.repeat(50)}page-${i}.md`);
 
-    const report = renderReport({ classification: classifyChanges(files, openPr), agent: notRun, apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification: classifyChanges(files, openPr), agent: notRun, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report.length).toBeLessThanOrEqual(65_536);
     expect(report).toMatch(/_\d+ more changed files not shown\._/);
@@ -317,11 +335,76 @@ describe('renderReport', () => {
       }),
     );
 
-    const report = renderReport({ classification: classifyChanges(paths, openPr), agent: succeeded(long(300), files), apply: notApplied, mutation: noMutation, runUrl });
+    const report = renderReport({ classification: classifyChanges(paths, openPr), agent: succeeded(long(300), files), apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
     expect(report.length).toBeLessThanOrEqual(65_536);
     expect(report).toContain('### Suspected Bugs');
     expect(report).toMatch(/not shown; see the Decision Log artifact\._/);
+  });
+
+  describe('coverage', () => {
+    const classification = classifyChanges([router, health, 'README.md'], openPr);
+    const agent = succeeded('Tested the router.', [entry(router), entry(health)]);
+
+    it('shows line and branch coverage of each changed source file before and after, under Evidence', () => {
+      const coverage: CoverageDelta = {
+        base: { [router]: { lines: 40, branches: 25 }, 'README.md': { lines: 0, branches: null } },
+        final: { [router]: { lines: 85, branches: 12.5 }, [health]: { lines: 100, branches: null }, 'README.md': { lines: 0, branches: null } },
+      };
+
+      const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage, runUrl });
+
+      expect(report).toContain(
+        [
+          '### Evidence',
+          '',
+          '#### Coverage',
+          '',
+          'Line and branch coverage of the changed source files before this pull request and at the verified commit.',
+          '',
+          '| File | Lines | Branches |',
+          '| --- | --- | --- |',
+          '| `backend/src/features/todos/router.ts` | 40.0% → 85.0% (+45.0) | 25.0% → 12.5% (-12.5) |',
+          '| `backend/src/api/health.ts` | new → 100.0% | new → n/a |',
+          '',
+        ].join('\n'),
+      );
+    });
+
+    it('leaves out changed files that neither run covered', () => {
+      const coverage: CoverageDelta = { base: {}, final: { [router]: { lines: 50, branches: 50 } } };
+
+      const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage, runUrl });
+
+      expect(report).toContain('| `backend/src/features/todos/router.ts` | new → 50.0% | new → 50.0% |');
+      expect(report).not.toContain('| `backend/src/api/health.ts` | new');
+    });
+
+    it('says which run has no coverage', () => {
+      const coverage: CoverageDelta = { base: null, final: { [router]: { lines: 50, branches: 50 } } };
+
+      const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage, runUrl });
+
+      expect(report).toContain(
+        ['| `backend/src/features/todos/router.ts` | ? → 50.0% | ? → 50.0% |', '', '_Coverage before this pull request is unavailable._', ''].join('\n'),
+      );
+    });
+
+    it('puts mutation testing under Evidence too', () => {
+      const mutation: MutationResults = { backend: completed({}), frontend: { status: 'not_run' } };
+      const coverage: CoverageDelta = { base: { [router]: { lines: 50, branches: 50 } }, final: null };
+
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, coverage, runUrl });
+
+      expect(report).toContain('_Coverage at the verified commit is unavailable._\n\n#### Mutation testing\n');
+      expect(report.match(/### Evidence/g)).toHaveLength(1);
+    });
+
+    it('leaves Evidence out when there is no coverage and no mutation testing', () => {
+      const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
+
+      expect(report).not.toContain('Evidence');
+    });
   });
 
   describe('mutation testing', () => {
@@ -331,11 +414,11 @@ describe('renderReport', () => {
     it('shows the score of each package that ran and lists its surviving mutants in a collapsed section', () => {
       const mutation: MutationResults = { backend: completed({}), frontend: { status: 'not_run' } };
 
-      const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, coverage: noCoverage, runUrl });
 
       expect(report).toContain(
         [
-          '### Mutation testing',
+          '#### Mutation testing',
           '',
           'Mutation score of the changed source files. A warning, not a gate: it does not change `test-agent/verify`.',
           '',
@@ -360,7 +443,7 @@ describe('renderReport', () => {
         frontend: completed({ score: 50, detected: 1, survived: 0, noCoverage: 0, survivors: [survivor({ file: 'src/App.tsx', line: 3, column: 1, replacement: null })] }),
       };
 
-      const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, coverage: noCoverage, runUrl });
 
       expect(tableRows(report)).toContain('| frontend | 50.00% | 1 | 0 | 0 |');
       expect(report).toContain('<summary>2 surviving mutants</summary>');
@@ -375,7 +458,7 @@ describe('renderReport', () => {
     it('says when there was no mutant to score', () => {
       const mutation: MutationResults = { backend: completed({ score: null, detected: 0, survived: 0, survivors: [] }), frontend: { status: 'not_run' } };
 
-      const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, coverage: noCoverage, runUrl });
 
       expect(tableRows(report)).toContain('| backend | n/a | 0 | 0 | 0 |');
       expect(report).not.toContain('surviving mutant');
@@ -384,7 +467,7 @@ describe('renderReport', () => {
     it('says which package failed mutation testing and why', () => {
       const mutation: MutationResults = { backend: completed({}), frontend: { status: 'failed', reason: 'Stryker failed or timed out' } };
 
-      const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, coverage: noCoverage, runUrl });
 
       expect(report).toContain('| backend | 75.00% | 3 | 1 | 0 |\n\n_frontend: mutation testing failed: Stryker failed or timed out._\n');
     });
@@ -392,11 +475,11 @@ describe('renderReport', () => {
     it('tells a package with nothing to mutate from one whose test suite failed', () => {
       const mutation: MutationResults = { backend: { status: 'no_files' }, frontend: { status: 'suite_failed' } };
 
-      const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, coverage: noCoverage, runUrl });
 
       expect(report).toContain(
         [
-          '### Mutation testing',
+          '#### Mutation testing',
           '',
           'Mutation score of the changed source files. A warning, not a gate: it does not change `test-agent/verify`.',
           '',
@@ -410,7 +493,7 @@ describe('renderReport', () => {
     });
 
     it('leaves the section out when mutation testing did not run', () => {
-      const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, runUrl });
+      const report = renderReport({ classification, agent, apply: notApplied, mutation: noMutation, coverage: noCoverage, runUrl });
 
       expect(report).not.toContain('Mutation testing');
     });
@@ -419,7 +502,7 @@ describe('renderReport', () => {
       const replacement = '`<img src=x>`\n  @owner [link](https://x)' + 'y'.repeat(100);
       const mutation: MutationResults = { backend: completed({ survivors: [survivor({ replacement })] }), frontend: { status: 'not_run' } };
 
-      const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, coverage: noCoverage, runUrl });
 
       const line = report.split('\n').find((text) => text.startsWith('- `backend/'));
       expect(line).toBe(`- \`backend/src/features/todos/router.ts:12:7\` EqualityOperator: \`\` \`<img src=x>\` @owner [link](https://x)${'y'.repeat(22)}… \`\``);
@@ -429,7 +512,7 @@ describe('renderReport', () => {
       const survivors = Array.from({ length: 5_000 }, (_, i) => survivor({ file: `src/${'x'.repeat(200)}.ts`, line: i + 1 }));
       const mutation: MutationResults = { backend: completed({ survived: 5_000, survivors }), frontend: { status: 'not_run' } };
 
-      const report = renderReport({ classification, agent, apply: notApplied, mutation, runUrl });
+      const report = renderReport({ classification, agent, apply: notApplied, mutation, coverage: noCoverage, runUrl });
 
       expect(report.length).toBeLessThanOrEqual(65_536);
       expect(report).toMatch(/_\d+ more surviving mutants not shown; see the mutation report artifact\._/);

@@ -1,4 +1,5 @@
 import type { Classification } from './classify.ts';
+import type { CoverageFiles, FileCoverage } from './coverage.ts';
 import type { Decision, DecisionLog, FileLog } from './decision-log.ts';
 import { mutationPackages, type MutationPackage, type MutationSummary, type Survivor } from './mutation.ts';
 import type { PatchRejection } from './patch.ts';
@@ -24,11 +25,16 @@ export type MutationResult =
 
 export type MutationResults = Record<MutationPackage, MutationResult>;
 
+// Coverage of the merge base and of the verified commit; null when that run produced no summary.
+export type CoverageDelta = { base: CoverageFiles | null; final: CoverageFiles | null };
+
 export type ReportInput = {
-  classification: Classification;
+  // null when the classify job failed.
+  classification: Classification | null;
   agent: AgentResult;
   apply: ApplyResult;
   mutation: MutationResults;
+  coverage: CoverageDelta;
   runUrl: string;
 };
 
@@ -66,7 +72,9 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-function toRows({ files }: Classification, agent: AgentResult): Row[] {
+function toRows(classification: Classification | null, agent: AgentResult): Row[] {
+  if (!classification) return [];
+  const { files } = classification;
   const logs = new Map(agent.status === 'succeeded' ? agent.log.files.map((log) => [log.path, log]) : []);
   const rows = files.map((file): Row => {
     if (file.decision !== 'pending') return { path: file.path, decision: file.decision, reason: file.reason };
@@ -79,7 +87,9 @@ function toRows({ files }: Classification, agent: AgentResult): Row[] {
   return [...rows.filter((row) => row.decision !== 'skipped'), ...rows.filter((row) => row.decision === 'skipped')];
 }
 
-function verdict({ stop, files }: Classification, agent: AgentResult, rows: readonly Row[]): string {
+function verdict(classification: Classification | null, agent: AgentResult, rows: readonly Row[]): string {
+  if (!classification) return 'Test Agent failed: the changed files could not be classified.';
+  const { stop, files } = classification;
   if (stop) return `Test Agent skipped: ${stop.message}.`;
   if (files.length === 0) return 'Test Agent skipped: no changed files.';
   if (rows.every((row) => row.decision === 'skipped')) {
@@ -228,7 +238,7 @@ function mutationTesting(budget: Budget, mutation: MutationResults): string[] {
         ]);
 
   return [
-    '### Mutation testing',
+    '#### Mutation testing',
     '',
     'Mutation score of the changed source files. A warning, not a gate: it does not change `test-agent/verify`.',
     '',
@@ -236,6 +246,53 @@ function mutationTesting(budget: Budget, mutation: MutationResults): string[] {
     ...notes,
     ...list,
   ];
+}
+
+// One side of a coverage cell: '?' when that run produced no summary, `missing` when it did not cover the file.
+function coverageValue(files: CoverageFiles | null, path: string, metric: keyof FileCoverage, missing: string): number | string {
+  if (!files) return '?';
+  const file = files[path];
+  if (!file) return missing;
+  return file[metric] ?? 'n/a';
+}
+
+function coverageCell({ base, final }: CoverageDelta, path: string, metric: keyof FileCoverage): string {
+  const before = coverageValue(base, path, metric, 'new');
+  const after = coverageValue(final, path, metric, 'gone');
+  const show = (value: number | string) => (typeof value === 'number' ? `${value.toFixed(1)}%` : value);
+  if (typeof before !== 'number' || typeof after !== 'number') return `${show(before)} → ${show(after)}`;
+  const change = (after - before).toFixed(1);
+  return `${show(before)} → ${show(after)} (${change.startsWith('-') ? '' : '+'}${change})`;
+}
+
+function coverageSection(budget: Budget, rows: readonly Row[], coverage: CoverageDelta): string[] {
+  const { base, final } = coverage;
+  const covered = rows.filter((row) => row.decision !== 'skipped' && (base?.[row.path] || final?.[row.path]));
+  if (covered.length === 0) return [];
+  const { kept, omitted } = fit(
+    budget,
+    covered.map(
+      (row) =>
+        `| ${codeSpan(row.path, true)} | ${coverageCell(coverage, row.path, 'lines')} | ${coverageCell(coverage, row.path, 'branches')} |`,
+    ),
+  );
+  return [
+    '#### Coverage',
+    '',
+    'Line and branch coverage of the changed source files before this pull request and at the verified commit.',
+    '',
+    '| File | Lines | Branches |',
+    '| --- | --- | --- |',
+    ...kept,
+    '',
+    ...(omitted > 0 ? [`_${plural(omitted, 'more changed file')} not shown._`, ''] : []),
+    ...(base ? [] : ['_Coverage before this pull request is unavailable._', '']),
+    ...(final ? [] : ['_Coverage at the verified commit is unavailable._', '']),
+  ];
+}
+
+function evidence(coverage: readonly string[], mutation: readonly string[]): string[] {
+  return coverage.length === 0 && mutation.length === 0 ? [] : ['### Evidence', '', ...coverage, ...mutation];
 }
 
 function listSection(title: string, items: readonly string[]): string[] {
@@ -261,7 +318,7 @@ function behaviorsAndTests(budget: Budget, logs: readonly FileLog[]): string[] {
   return collapsible('Behaviors and tests', [...kept, ...omittedNote(omitted, 'more file')]);
 }
 
-export function renderReport({ classification, agent, apply, mutation, runUrl }: ReportInput): string {
+export function renderReport({ classification, agent, apply, mutation, coverage, runUrl }: ReportInput): string {
   const rows = toRows(classification, agent);
   const logs = rows.flatMap((row) => (row.log ? [row.log] : []));
   const summary = agent.status === 'succeeded' ? [escapeMarkdown(agent.log.summary), ''] : [];
@@ -279,6 +336,7 @@ export function renderReport({ classification, agent, apply, mutation, runUrl }:
   const applyLines = applied(budget, apply);
   const bugs = suspectedBugs(budget, logs);
   const decisions = table(budget, rows);
+  const coverageLines = coverageSection(budget, rows, coverage);
   const mutationLines = mutationTesting(budget, mutation);
   const details = behaviorsAndTests(budget, logs);
 
@@ -286,7 +344,7 @@ export function renderReport({ classification, agent, apply, mutation, runUrl }:
     ...head,
     ...applyLines,
     ...decisions,
-    ...mutationLines,
+    ...evidence(coverageLines, mutationLines),
     ...bugs,
     ...details,
     `[Workflow run](${runUrl})`,

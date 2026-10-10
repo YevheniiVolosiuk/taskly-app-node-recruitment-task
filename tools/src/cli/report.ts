@@ -1,32 +1,54 @@
-// Usage: AGENT_JOB_RESULT=<needs.agent.result> APPLY_JOB_RESULT=<needs.apply.result> APPLY_COMMIT=<pushed SHA or empty>
+// Usage: AGENT_JOB_RESULT=<needs.agent.result> AGENT_OUTCOME=<agent step outcome> AGENT_TIMED_OUT=<1 when it timed out>
+//   APPLY_JOB_RESULT=<needs.apply.result> APPLY_COMMIT=<pushed SHA or empty>
 //   MUTATION_<PACKAGE>_OUTCOME=<Stryker step outcome> SUITE_<PACKAGE>_OUTCOME=<test suite step outcome>
 //   FILES_TO_MUTATE_<PACKAGE>=<files-to-mutate output> (for BACKEND and FRONTEND) RUN_URL=<workflow run URL>
-//   node tools/src/cli/report.ts <classification.json> <decision-log.json> <patch-validation.json> <mutation-dir> <report.md>
-// <decision-log.json> is the agent's untrusted structured output; it may be missing when the agent did not finish.
+//   node tools/src/cli/report.ts <classification.json> <agent-run-dir> <patch-validation.json> <mutation-dir> <coverage-dir> <report.md>
+// <classification.json> is missing when the classify job failed.
+// <agent-run-dir> holds the agent job's execution-result.json and decision-log.json, both untrusted; either may be missing.
 // <patch-validation.json> may be missing when the apply job did not validate a patch.
 // <mutation-dir>/<package>/mutation.json is Stryker's report from a run of the PR's code; it may be missing.
+// <coverage-dir>/coverage-{baseline,summary}-<package>/coverage-summary.json are Vitest's coverage summaries of the merge
+// base and of the verified commit, keyed by absolute paths under GITHUB_WORKSPACE; any may be missing.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { agentResult } from '../agent-run.ts';
 import type { Classification } from '../classify.ts';
-import { parseDecisionLog } from '../decision-log.ts';
-import { parseMutationReport } from '../mutation.ts';
+import { parseCoverageSummary, type CoverageFiles } from '../coverage.ts';
 import type { PatchValidation } from '../patch.ts';
-import { renderReport, type AgentResult, type ApplyResult, type MutationResult, type MutationResults } from '../report.ts';
+import { mutationPackages, parseMutationReport } from '../mutation.ts';
+import {
+  renderReport,
+  type AgentResult,
+  type ApplyResult,
+  type CoverageDelta,
+  type MutationResult,
+  type MutationResults,
+} from '../report.ts';
 
-const [classificationPath, decisionLogPath, validationPath, mutationDir, outputPath] = process.argv.slice(2);
-if (!classificationPath || !decisionLogPath || !validationPath || !mutationDir || !outputPath) {
+const [classificationPath, agentRunDir, validationPath, mutationDir, coverageDir, outputPath] = process.argv.slice(2);
+if (!classificationPath || !agentRunDir || !validationPath || !mutationDir || !coverageDir || !outputPath) {
   throw new Error(
-    'usage: report.ts <classification.json> <decision-log.json> <patch-validation.json> <mutation-dir> <report.md>',
+    'usage: report.ts <classification.json> <agent-run-dir> <patch-validation.json> <mutation-dir> <coverage-dir> <report.md>',
   );
 }
 
-function agentResult(jobResult: string | undefined, logPath: string): AgentResult {
-  if (jobResult === 'cancelled') return { status: 'failed', reason: 'the agent job was cancelled or timed out' };
-  if (jobResult === 'failure') return { status: 'failed', reason: 'the agent job failed' };
-  if (jobResult !== 'success') return { status: 'not_run' };
-  if (!existsSync(logPath)) return { status: 'failed', reason: 'the agent produced no Decision Log' };
+const read = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : null);
 
-  const parsed = parseDecisionLog(readFileSync(logPath, 'utf8'));
-  return parsed.ok ? { status: 'succeeded', log: parsed.log } : { status: 'failed', reason: `invalid Decision Log: ${parsed.error}` };
+function agentJobResult(jobResult: string | undefined): AgentResult {
+  if (jobResult !== 'success' && jobResult !== 'failure' && jobResult !== 'cancelled') return { status: 'not_run' };
+  const outcome = process.env.AGENT_OUTCOME;
+  if (!outcome || outcome === 'skipped') {
+    const reason = jobResult === 'cancelled' ? 'the agent job was cancelled or timed out' : 'the agent job failed before the agent ran';
+    return { status: 'failed', reason };
+  }
+
+  const result = agentResult({
+    outcome,
+    timedOut: process.env.AGENT_TIMED_OUT === '1',
+    execution: read(`${agentRunDir}/execution-result.json`),
+    decisionLog: read(`${agentRunDir}/decision-log.json`),
+  });
+  if (result.status === 'succeeded' && jobResult !== 'success') return { status: 'failed', reason: 'the agent job failed after the agent finished' };
+  return result;
 }
 
 function applyResult(jobResult: string | undefined, commit: string | undefined, validationPath: string): ApplyResult {
@@ -53,14 +75,29 @@ function mutationResult(pkg: 'BACKEND' | 'FRONTEND', reportPath: string): Mutati
   return parsed.ok ? { status: 'completed', summary: parsed.summary } : { status: 'failed', reason: `invalid report: ${parsed.error}` };
 }
 
-const classification = JSON.parse(readFileSync(classificationPath, 'utf8')) as Classification;
+// One package's summary missing leaves its files out; both missing means that run has no coverage.
+function coverageFiles(run: 'baseline' | 'summary', root: string): CoverageFiles | null {
+  const summaries = mutationPackages.flatMap((pkg) => {
+    const json = read(`${coverageDir}/coverage-${run}-${pkg}/coverage-summary.json`);
+    const parsed = json === null ? null : parseCoverageSummary(json, root);
+    if (parsed && !parsed.ok) console.log(`::warning::Ignoring the ${run} coverage of ${pkg}: ${parsed.error}`);
+    return parsed?.ok ? [parsed.files] : [];
+  });
+  return summaries.length === 0 ? null : Object.assign({}, ...summaries);
+}
+
+const classificationJson = read(classificationPath);
+const classification = classificationJson === null ? null : (JSON.parse(classificationJson) as Classification);
 const runUrl = process.env.RUN_URL;
 if (!runUrl) throw new Error('RUN_URL is not set');
+const workspace = process.env.GITHUB_WORKSPACE;
+if (!workspace) throw new Error('GITHUB_WORKSPACE is not set');
 
-const agent = agentResult(process.env.AGENT_JOB_RESULT, decisionLogPath);
+const agent = agentJobResult(process.env.AGENT_JOB_RESULT);
 const apply = applyResult(process.env.APPLY_JOB_RESULT, process.env.APPLY_COMMIT, validationPath);
 const mutation: MutationResults = {
   backend: mutationResult('BACKEND', `${mutationDir}/backend/mutation.json`),
   frontend: mutationResult('FRONTEND', `${mutationDir}/frontend/mutation.json`),
 };
-writeFileSync(outputPath, renderReport({ classification, agent, apply, mutation, runUrl }));
+const coverage: CoverageDelta = { base: coverageFiles('baseline', workspace), final: coverageFiles('summary', workspace) };
+writeFileSync(outputPath, renderReport({ classification, agent, apply, mutation, coverage, runUrl }));

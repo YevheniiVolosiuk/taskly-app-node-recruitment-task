@@ -1,6 +1,6 @@
 # The Test Agent does not run on fork pull requests
 
-The workflow triggers on `pull_request` only, and the Test Agent job is skipped when the PR head lives in a fork; plain test suites still run. A fork PR is untrusted code: running an agent that holds the Anthropic credential and a write path next to it invites secret theft, prompt injection through the diff, and the "pwn request" pattern. GitHub already withholds secrets from fork PRs on `pull_request`, so this aligns with the platform's model instead of working around it.
+The workflow triggers on `pull_request`, plus `workflow_dispatch` for manual re-runs, and the Test Agent job is skipped when the PR head lives in a fork; plain test suites still run. A dispatch refuses fork PRs, since its jobs get write tokens whatever the PR's origin. A fork PR is untrusted code: running an agent that holds the Anthropic credential and a write path next to it invites secret theft, prompt injection through the diff, and the "pwn request" pattern. GitHub already withholds secrets from fork PRs on `pull_request`, so this aligns with the platform's model instead of working around it.
 
 ## Considered Options
 
