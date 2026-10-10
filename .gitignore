@@ -32,4 +32,4 @@ coverage/
 
 # Mutation testing
 .stryker-tmp/
-reports/mutation/
+**/reports/mutation/
