@@ -207,6 +207,7 @@ jobs:
             --max-turns 30
             --add-dir ${{ runner.temp }}/test-agent-input
             --json-schema '${{ steps.schema.outputs.json }}'
+            --allowedTools Edit Write
             --disallowedTools WebFetch WebSearch "Bash(git push:*)" "Bash(gh:*)" "Bash(curl:*)" "Bash(wget:*)"
 
       # Agent output reaches scripts only through env vars and files. The action's final result message says why a
