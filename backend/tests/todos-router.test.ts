@@ -15,6 +15,7 @@ function setup(delegate: Record<string, unknown> = {}) {
 }
 const notFound = { detail: 'Task not found.' };
 
+
 it.each(['get', 'patch', 'delete'] as const)('answers 422 to %s with a non-integer id', async (method) => {
   const response = await request(setup().app)[method]('/api/todos/abc');
   expect(response.status).toBe(422);
