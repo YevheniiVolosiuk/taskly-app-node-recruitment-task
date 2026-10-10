@@ -35,6 +35,12 @@ describe('selectTodos', () => {
     expect(todos).toEqual([base, high])
   })
 
+  it('sorts equal priorities by id descending', () => {
+    const low: Todo = { ...base, id: 1, priority: 'high' }
+    const high: Todo = { ...base, id: 5, priority: 'high' }
+    expect(selectTodos([low, high], '', 'priority')).toEqual([high, low])
+  })
+
   it('sorts by due date ascending, undated last, ties by id descending', () => {
     const a = { ...base, id: 1, due_date: '2026-12-01' }
     const b = { ...base, id: 2, due_date: '2026-11-01' }
