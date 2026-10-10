@@ -208,7 +208,7 @@ jobs:
             --max-turns 30
             --add-dir ${{ runner.temp }}/test-agent-input
             --json-schema '${{ steps.schema.outputs.json }}'
-            --allowedTools Edit Write
+            --allowedTools Edit Write "Bash(npm --prefix backend test:*)" "Bash(backend/node_modules/.bin/tsc -p backend)" "Bash(npm --prefix frontend test:*)" "Bash(frontend/node_modules/.bin/tsc -p frontend)"
             --disallowedTools WebFetch WebSearch "Bash(git push:*)" "Bash(gh:*)" "Bash(curl:*)" "Bash(wget:*)"
 
       # Agent output reaches scripts only through env vars and files. The action's final result message says why a
