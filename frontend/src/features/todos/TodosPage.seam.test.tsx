@@ -113,7 +113,7 @@ it('shows the error in the page alert when toggling fails', async () => {
 
 it('deletes a task after confirmation', async () => {
   const { user, fetch } = setup({
-    'GET /api/todos': list([active, done]),
+    'GET /api/todos': [list([active, done]), list([done])],
     'DELETE /api/todos/7': () => new Response(null, { status: 204 }),
   })
   await user.click(
@@ -152,7 +152,10 @@ it('keeps the delete dialog open and shows the error when deleting fails', async
 
 it('saves an edited task and confirms the changes', async () => {
   const { user, bodies } = setup({
-    'GET /api/todos': list([active]),
+    'GET /api/todos': [
+      list([active]),
+      list([{ ...active, title: 'Prepare the demo' }]),
+    ],
     'PATCH /api/todos/7': () =>
       Response.json({ ...active, title: 'Prepare the demo' }),
   })

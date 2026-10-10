@@ -1,4 +1,4 @@
-import type { Filter, Sort, Todo, TodoInput } from '../types'
+import type { Sort, Todo, TodoInput } from '../types'
 
 export const priorityLabels = { low: 'Low', medium: 'Medium', high: 'High' }
 const priorityOrder = { high: 0, medium: 1, low: 2 }
@@ -23,25 +23,14 @@ export function validateTodo(input: TodoInput): Record<string, string> {
   return errors
 }
 
-export function selectTodos(
-  todos: Todo[],
-  filter: Filter,
-  query: string,
-  sort: Sort,
-): Todo[] {
+export function selectTodos(todos: Todo[], query: string, sort: Sort): Todo[] {
   const search = query.trim().toLocaleLowerCase('en')
   return todos
-    .filter((todo) => {
-      const statusMatches =
-        filter === 'all' ||
-        (filter === 'completed' ? todo.completed : !todo.completed)
-      return (
-        statusMatches &&
-        `${todo.title} ${todo.description}`
-          .toLocaleLowerCase('en')
-          .includes(search)
-      )
-    })
+    .filter((todo) =>
+      `${todo.title} ${todo.description}`
+        .toLocaleLowerCase('en')
+        .includes(search),
+    )
     .sort((a, b) => {
       if (sort === 'priority')
         return (

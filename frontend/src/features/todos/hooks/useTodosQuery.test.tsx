@@ -7,7 +7,7 @@ import { useTodosQuery } from './useTodosQuery'
 function setup(fetch: ReturnType<typeof vi.fn>) {
   vi.stubGlobal('fetch', fetch)
   const client = createTestClient()
-  const { result } = renderHook(() => useTodosQuery(), {
+  const { result } = renderHook(() => useTodosQuery('all'), {
     wrapper: createWrapper(client),
   })
   return { result, fetch }

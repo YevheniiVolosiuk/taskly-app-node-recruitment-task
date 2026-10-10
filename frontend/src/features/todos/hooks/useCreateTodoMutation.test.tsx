@@ -6,11 +6,11 @@ import { todoKeys } from '../api/queryKeys'
 import type { Todo } from '../types'
 import { useCreateTodoMutation } from './useCreateTodoMutation'
 
-async function create(saved: Todo, cached?: Todo[]) {
+async function create(saved: Todo, cached: Todo[]) {
   const fetch = vi.fn().mockResolvedValue(Response.json(saved, { status: 201 }))
   vi.stubGlobal('fetch', fetch)
   const client = createTestClient()
-  if (cached) client.setQueryData<Todo[]>(todoKeys.list, cached)
+  client.setQueryData<Todo[]>(todoKeys.list('all'), cached)
   const { result } = renderHook(() => useCreateTodoMutation(), {
     wrapper: createWrapper(client),
   })
@@ -20,7 +20,7 @@ async function create(saved: Todo, cached?: Todo[]) {
     '/api/todos',
     expect.objectContaining({ method: 'POST' }),
   )
-  return client.getQueryData(todoKeys.list)
+  return client.getQueryData(todoKeys.list('all'))
 }
 
 it('puts the saved task first in the list', async () => {
@@ -35,8 +35,4 @@ it('does not duplicate a cached task with the same id', async () => {
     saved,
     todoFixture,
   ])
-})
-
-it('creates the list when the cache is empty', async () => {
-  expect(await create(todoFixture)).toEqual([todoFixture])
 })

@@ -10,10 +10,13 @@ export function useUpdateTodoMutation() {
     mutationFn: ({ id, input }: { id: number; input: Partial<TodoInput> }) =>
       todosApi.update(id, input),
     onSuccess: async (saved) => {
-      await queryClient.cancelQueries({ queryKey: todoKeys.list })
-      queryClient.setQueryData<Todo[]>(todoKeys.list, (current) =>
-        current?.map((todo) => (todo.id === saved.id ? saved : todo)),
+      await queryClient.cancelQueries({ queryKey: todoKeys.lists })
+      queryClient.setQueriesData<Todo[]>(
+        { queryKey: todoKeys.lists },
+        (current) =>
+          current?.map((todo) => (todo.id === saved.id ? saved : todo)),
       )
+      void queryClient.invalidateQueries({ queryKey: todoKeys.lists })
     },
   })
 }

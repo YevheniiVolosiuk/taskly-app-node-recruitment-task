@@ -1,11 +1,28 @@
 import { fromModel } from './mappers.js';
-import type { Database, TodoStore, TodoCreate, TodoUpdate, Todo } from './types.js';
+import type { Prisma } from '../../generated/prisma/client.js';
+import type { Database, TodoStore, TodoCreate, TodoUpdate, Todo, TodoStatus } from './types.js';
+
+function statusFilter(status: TodoStatus): Prisma.TodoWhereInput {
+  switch (status) {
+    case 'active':
+      return { completed: false };
+    case 'completed':
+      return { completed: true };
+    case 'overdue': {
+      const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+      return { completed: false, due_date: { lte: today } };
+    }
+  }
+}
 
 export class TodoRepository implements TodoStore {
   constructor(private readonly database: Pick<Database, 'todo'>) {}
 
-  async list(): Promise<Todo[]> {
-    const rows = await this.database.todo.findMany({ orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+  async list(status?: TodoStatus): Promise<Todo[]> {
+    const rows = await this.database.todo.findMany({
+      where: status && statusFilter(status),
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+    });
     return rows.map(fromModel);
   }
 

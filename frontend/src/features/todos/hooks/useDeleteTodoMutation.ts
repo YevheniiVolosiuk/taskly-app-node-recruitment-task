@@ -9,10 +9,12 @@ export function useDeleteTodoMutation() {
     mutationKey: todoKeys.delete,
     mutationFn: (id: number) => todosApi.remove(id),
     onSuccess: async (_, id) => {
-      await queryClient.cancelQueries({ queryKey: todoKeys.list })
-      queryClient.setQueryData<Todo[]>(todoKeys.list, (current) =>
-        current?.filter((todo) => todo.id !== id),
+      await queryClient.cancelQueries({ queryKey: todoKeys.lists })
+      queryClient.setQueriesData<Todo[]>(
+        { queryKey: todoKeys.lists },
+        (current) => current?.filter((todo) => todo.id !== id),
       )
+      void queryClient.invalidateQueries({ queryKey: todoKeys.lists })
     },
   })
 }

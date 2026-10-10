@@ -10,11 +10,13 @@ export function useCreateTodoMutation() {
     mutationFn: (input: TodoInput) => todosApi.create(input),
     onSuccess: async (saved) => {
       // Stop an older refetch from overwriting the confirmed server response.
-      await queryClient.cancelQueries({ queryKey: todoKeys.list })
-      queryClient.setQueryData<Todo[]>(todoKeys.list, (current = []) => [
-        saved,
-        ...current.filter((todo) => todo.id !== saved.id),
-      ])
+      await queryClient.cancelQueries({ queryKey: todoKeys.lists })
+      queryClient.setQueryData<Todo[]>(
+        todoKeys.list('all'),
+        (current) =>
+          current && [saved, ...current.filter((todo) => todo.id !== saved.id)],
+      )
+      void queryClient.invalidateQueries({ queryKey: todoKeys.lists })
     },
   })
 }

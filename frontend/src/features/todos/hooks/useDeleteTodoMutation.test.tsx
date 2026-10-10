@@ -11,7 +11,7 @@ it('deletes the task on the server and removes it from the list', async () => {
   vi.stubGlobal('fetch', fetch)
   const client = createTestClient()
   const other = { ...todoFixture, id: 8 }
-  client.setQueryData<Todo[]>(todoKeys.list, [todoFixture, other])
+  client.setQueryData<Todo[]>(todoKeys.list('all'), [todoFixture, other])
   const { result } = renderHook(() => useDeleteTodoMutation(), {
     wrapper: createWrapper(client),
   })
@@ -21,5 +21,5 @@ it('deletes the task on the server and removes it from the list', async () => {
     '/api/todos/7',
     expect.objectContaining({ method: 'DELETE' }),
   )
-  expect(client.getQueryData(todoKeys.list)).toEqual([other])
+  expect(client.getQueryData(todoKeys.list('all'))).toEqual([other])
 })

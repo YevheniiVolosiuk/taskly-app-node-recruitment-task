@@ -12,11 +12,12 @@ import { useTodosBusy } from './hooks/useTodosBusy'
 import { useTodosQuery } from './hooks/useTodosQuery'
 import { useUpdateTodoMutation } from './hooks/useUpdateTodoMutation'
 import type { Todo } from './types'
+import { selectTodos } from './utils/todos'
 
 export function TodosPage() {
-  const todosQuery = useTodosQuery()
+  const filters = useTodoFilters()
+  const todosQuery = useTodosQuery(filters.filter)
   const todos = todosQuery.data ?? []
-  const filters = useTodoFilters(todos)
   const toggleTodo = useUpdateTodoMutation()
   const busy = useTodosBusy()
   const { message, notify } = useNotice()
@@ -73,8 +74,11 @@ export function TodosPage() {
           </Alert>
         )}
         <TodoList
-          todos={filters.visible}
-          hasTodos={todos.length > 0}
+          todos={selectTodos(todos, filters.search, filters.sort)}
+          hasTodos={
+            todos.length > 0 ||
+            (filters.filter !== 'all' && todosQuery.isSuccess)
+          }
           loading={todosQuery.isPending}
           failed={todosQuery.isError}
           busy={busy}
