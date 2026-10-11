@@ -12,14 +12,17 @@ on:
 
 permissions: {}
 
+# A run started by the agent's own test commit gets a group of its own, so it never cancels the run that pushed it.
 concurrency:
-  group: test-agent-${{ github.event.pull_request.number || inputs.pull-request }}
+  group: test-agent-${{ github.event.pull_request.number || inputs.pull-request }}${{ github.actor == 'github-actions[bot]' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
   # The live pull request, not the event payload, so re-runs and manual dispatches see its current head.
+  # The run that pushed the agent's test commit already verifies it, so a run that commit starts does nothing.
   pull-request:
     name: Resolve pull request
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -301,7 +304,7 @@ jobs:
           if-no-files-found: ignore
 
       # Pushing onto the analyzed head fails if the author pushed since, so a stale patch never lands.
-      # Pushes with GITHUB_TOKEN do not start a new run; verify checks out the commit from here.
+      # verify checks out the commit from here and posts its status.
       - name: Commit and push
         id: push
         if: ${{ steps.validate.outputs.changes == 'true' }}
