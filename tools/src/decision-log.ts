@@ -30,18 +30,32 @@ const limits = {
   attempts: 3,
 };
 
+const alreadyCovered = 'already covered: <test file> > <test name>';
+
 // Each Skip reason fills in the template of a rule a skill defines, so a Skip cannot rest on a made-up reason.
 export const skipReasons = [
   'no agreed seam: <what is missing>',
   'no behavior change: <what changed>',
   'could not write a passing test in 3 attempts: <error>',
   'tests could not run: <error>',
-  'already covered: <test file> > <test name>',
+  alreadyCovered,
 ] as const;
 
-const skipReason = new RegExp(
-  `^(?:${skipReasons.map((template) => template.replace('<test file>', '\\S+').replace(/<[^>]+>/g, '.+')).join('|')})$`,
-);
+// A test file holds no spaces, so a citation splits at the first ` > ` after it.
+function fill(template: string, group: (pattern: string) => string): string {
+  return template.replace('<test file>', group('\\S+')).replace(/<[^>]+>/g, group('.+'));
+}
+
+const skipReason = new RegExp(`^(?:${skipReasons.map((template) => fill(template, (pattern) => pattern)).join('|')})$`);
+const citation = new RegExp(`^${fill(alreadyCovered, (pattern) => `(${pattern})`)}$`);
+
+export type Citation = { file: string; test: string };
+
+// The test an `already covered` Skip cites; null for any other reason.
+export function parseCitation(reason: string): Citation | null {
+  const [, file, test] = citation.exec(reason) ?? [];
+  return file && test ? { file, test } : null;
+}
 
 type UnsafeText = { pattern: RegExp; label: string };
 
