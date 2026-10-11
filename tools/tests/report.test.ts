@@ -21,7 +21,7 @@ const noMutation: MutationResults = { backend: { status: 'not_run' }, frontend: 
 const noCoverage: CoverageDelta = { base: null, final: null };
 const notVerified: VerificationResult = { status: 'not_run' };
 const headSha = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
-const allPassed = { backend: 'passed', frontend: 'passed', tools: 'passed', smokeApi: 'passed', smokeBuild: 'passed' } as const;
+const allPassed = { backend: 'passed', frontend: 'passed', tools: 'passed', 'smoke-api': 'passed', 'smoke-build': 'passed' } as const;
 
 function succeeded(summary: string, files: FileLog[]): AgentResult {
   const log: DecisionLog = { summary, files };
@@ -428,7 +428,7 @@ describe('renderReport', () => {
     const committed: ApplyResult = { status: 'committed', sha: headSha };
 
     it('lists every check as passed and the success status of the test commit, first in Evidence', () => {
-      const verification: VerificationResult = { status: 'finished', sha: headSha, checks: allPassed };
+      const verification: VerificationResult = { status: 'finished', sha: headSha, state: 'success', posted: true, checks: allPassed };
       const coverage: CoverageDelta = { base: { [router]: { lines: 50, branches: 50 } }, final: { [router]: { lines: 80, branches: 50 } } };
 
       const report = renderReport({ classification, agent, apply: committed, mutation: noMutation, coverage, verification, runUrl });
@@ -455,7 +455,13 @@ describe('renderReport', () => {
     });
 
     it('names a failed check and reports failure for the pull request head', () => {
-      const verification: VerificationResult = { status: 'finished', sha: headSha, checks: { ...allPassed, frontend: 'failed' } };
+      const verification: VerificationResult = {
+        status: 'finished',
+        sha: headSha,
+        state: 'failure',
+        posted: true,
+        checks: { ...allPassed, frontend: 'failed' },
+      };
 
       const report = renderReport({ classification, agent, apply: { status: 'no_changes' }, mutation: noMutation, coverage: noCoverage, verification, runUrl });
 
@@ -464,14 +470,31 @@ describe('renderReport', () => {
       expect(report).toContain('_Failed: Frontend tests with coverage. Open that step in the Verification Job log._');
     });
 
-    it('shows a check that did not run as such and reports failure', () => {
-      const verification: VerificationResult = { status: 'finished', sha: headSha, checks: { ...allPassed, backend: 'failed', smokeApi: 'not_run' } };
+    it('shows a check that did not run as such', () => {
+      const verification: VerificationResult = {
+        status: 'finished',
+        sha: headSha,
+        state: 'failure',
+        posted: true,
+        checks: { ...allPassed, backend: 'failed', 'smoke-api': 'not_run' },
+      };
 
       const report = renderReport({ classification, agent, apply: committed, mutation: noMutation, coverage: noCoverage, verification, runUrl });
 
       expect(report).toContain('`test-agent/verify`: `failure`');
       expect(report).toContain('| Smoke check backend | did not run |');
       expect(report).toContain('_Failed: Backend tests with coverage. Open that step in the Verification Job log._');
+    });
+
+    it('gives the result without claiming a test-agent/verify status when none was posted', () => {
+      const verification: VerificationResult = { status: 'finished', sha: headSha, state: 'success', posted: false, checks: allPassed };
+
+      const report = renderReport({ classification, agent, apply: committed, mutation: noMutation, coverage: noCoverage, verification, runUrl });
+
+      expect(report).toContain(
+        `Verification result: \`success\` on ${headSha} (the Test Agent's test commit). \`test-agent/verify\` was not posted: a fork or Dependabot pull request gets a read-only token.`,
+      );
+      expect(report).not.toContain('`test-agent/verify`: `success`');
     });
 
     it('says nothing was verified when the Verification Job did not run', () => {
@@ -482,13 +505,22 @@ describe('renderReport', () => {
     });
 
     it('shows no check as passed when the Verification Job was cancelled', () => {
-      const report = renderReport({ classification, agent, apply: committed, mutation: noMutation, coverage: noCoverage, verification: { status: 'cancelled' }, runUrl });
+      const report = renderReport({ classification, agent, apply: committed, mutation: noMutation, coverage: noCoverage, verification: { status: 'cancelled', posted: true }, runUrl });
 
       expect(report).toContain(
         '#### Verification\n\nThe Verification Job was cancelled or timed out, so `test-agent/verify` is `error`. Its checks did not finish, so none is shown.\n',
       );
       expect(report).not.toContain('| Check |');
       expect(report).not.toContain('passed');
+    });
+
+    it('does not claim an error status when the cancelled Verification Job posted none', () => {
+      const report = renderReport({ classification, agent, apply: committed, mutation: noMutation, coverage: noCoverage, verification: { status: 'cancelled', posted: false }, runUrl });
+
+      expect(report).toContain(
+        '#### Verification\n\nThe Verification Job was cancelled or timed out, and `test-agent/verify` was not posted. Its checks did not finish, so none is shown.\n',
+      );
+      expect(report).not.toContain('`error`');
     });
   });
 

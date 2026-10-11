@@ -397,6 +397,8 @@ jobs:
       smoke-api: ${{ steps.smoke-api.outcome }}
       smoke-build: ${{ steps.smoke-build.outcome }}
       sha: ${{ env.SHA }}
+      state: ${{ steps.result.outputs.state }}
+      status-posted: ${{ env.POST_STATUS }}
       files-to-mutate-backend: ${{ steps.files-to-mutate.outputs.backend }}
       files-to-mutate-frontend: ${{ steps.files-to-mutate.outputs.frontend }}
     env:
@@ -404,6 +406,8 @@ jobs:
       # The final commit: the agent's test commit when apply pushed one, else the PR head.
       SHA: ${{ needs.apply.outputs.commit || needs.pull-request.outputs.head-sha }}
       STATUS_CONTEXT: test-agent/verify
+      # Fork and Dependabot PRs get a read-only token, so only other same-repo PRs post the status.
+      POST_STATUS: ${{ needs.pull-request.outputs.same-repo == 'true' && github.actor != 'dependabot[bot]' }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     # The smoke check boots the built backend against a real database.
     services:
@@ -419,9 +423,8 @@ jobs:
           --health-cmd "pg_isready -U taskly -d taskly"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      # Fork and Dependabot PRs get a read-only token, so only other same-repo PRs post the status.
       - name: Mark status pending
-        if: ${{ needs.pull-request.outputs.same-repo == 'true' && github.actor != 'dependabot[bot]' }}
+        if: ${{ env.POST_STATUS == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -505,10 +508,11 @@ jobs:
           path: frontend/coverage/coverage-summary.json
           if-no-files-found: warn
 
-      - name: Post verification status
-        if: ${{ always() && needs.pull-request.outputs.same-repo == 'true' && github.actor != 'dependabot[bot]' }}
+      # The one place the test-agent/verify state is decided: the post step and the report both use it.
+      - name: Decide verification status
+        id: result
+        if: ${{ always() }}
         env:
-          GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
           BACKEND_OUTCOME: ${{ steps.backend.outcome }}
           FRONTEND_OUTCOME: ${{ steps.frontend.outcome }}
@@ -524,8 +528,21 @@ jobs:
           else
             state=failure
           fi
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
+      - name: Post verification status
+        if: ${{ always() && env.POST_STATUS == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ steps.result.outputs.state }}
+          BACKEND_OUTCOME: ${{ steps.backend.outcome }}
+          FRONTEND_OUTCOME: ${{ steps.frontend.outcome }}
+          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          SMOKE_API_OUTCOME: ${{ steps.smoke-api.outcome }}
+          SMOKE_BUILD_OUTCOME: ${{ steps.smoke-build.outcome }}
+        run: |
           gh api --method POST "repos/$REPO/statuses/$SHA" \
-            -f state="$state" -f context="$STATUS_CONTEXT" \
+            -f state="$STATE" -f context="$STATUS_CONTEXT" \
             -f description="backend: $BACKEND_OUTCOME, frontend: $FRONTEND_OUTCOME, tools: $TOOLS_OUTCOME, smoke api: $SMOKE_API_OUTCOME, smoke build: $SMOKE_BUILD_OUTCOME" \
             -f target_url="$RUN_URL"
 
@@ -655,6 +672,8 @@ jobs:
           SMOKE_API_OUTCOME: ${{ needs.verify.outputs.smoke-api }}
           SMOKE_BUILD_OUTCOME: ${{ needs.verify.outputs.smoke-build }}
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+          VERIFY_STATE: ${{ needs.verify.outputs.state }}
+          STATUS_POSTED: ${{ needs.verify.outputs.status-posted }}
           VERIFIED_SHA: ${{ needs.verify.outputs.sha }}
           FILES_TO_MUTATE_BACKEND: ${{ needs.verify.outputs.files-to-mutate-backend }}
           FILES_TO_MUTATE_FRONTEND: ${{ needs.verify.outputs.files-to-mutate-frontend }}
