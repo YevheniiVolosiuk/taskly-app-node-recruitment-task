@@ -9,7 +9,7 @@ beforeEach(() => vi.clearAllMocks())
 it('passes the abort signal when fetching tasks', async () => {
   const signal = new AbortController().signal
   vi.mocked(request).mockResolvedValue([todoFixture])
-  await expect(todosApi.list(signal)).resolves.toEqual([todoFixture])
+  await expect(todosApi.list('all', signal)).resolves.toEqual([todoFixture])
   expect(request).toHaveBeenCalledWith('/todos', { signal })
 })
 

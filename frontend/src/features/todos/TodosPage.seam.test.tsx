@@ -113,7 +113,7 @@ it('shows the error in the page alert when toggling fails', async () => {
 
 it('deletes a task after confirmation', async () => {
   const { user, fetch } = setup({
-    'GET /api/todos': list([active, done]),
+    'GET /api/todos': [list([active, done]), list([done])],
     'DELETE /api/todos/7': () => new Response(null, { status: 204 }),
   })
   await user.click(
@@ -152,7 +152,10 @@ it('keeps the delete dialog open and shows the error when deleting fails', async
 
 it('saves an edited task and confirms the changes', async () => {
   const { user, bodies } = setup({
-    'GET /api/todos': list([active]),
+    'GET /api/todos': [
+      list([active]),
+      list([{ ...active, title: 'Prepare the demo' }]),
+    ],
     'PATCH /api/todos/7': () =>
       Response.json({ ...active, title: 'Prepare the demo' }),
   })
@@ -199,4 +202,64 @@ it('shows no matching tasks, without a create button, when the search finds noth
   expect(
     screen.queryByRole('button', { name: 'Add your first task' }),
   ).not.toBeInTheDocument()
+})
+
+it('opens the new task editor from the header and closes it on Cancel', async () => {
+  const { user } = setup({ 'GET /api/todos': list([active]) })
+  await screen.findByRole('heading', { name: 'Prepare a demo' })
+  await user.click(screen.getByRole('button', { name: 'New task' }))
+  const dialog = await screen.findByRole('dialog', { name: 'New task' })
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+  )
+})
+
+it('closes the delete dialog on Cancel without deleting', async () => {
+  const { user, fetch } = setup({ 'GET /api/todos': list([active]) })
+  await user.click(
+    await screen.findByRole('button', { name: 'Delete: Prepare a demo' }),
+  )
+  const dialog = await screen.findByRole('dialog', { name: 'Delete task?' })
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+  )
+  expect(fetch).not.toHaveBeenCalledWith(
+    '/api/todos/7',
+    expect.objectContaining({ method: 'DELETE' }),
+  )
+})
+
+it('asks the server for overdue tasks when Overdue is chosen', async () => {
+  const { user, fetch } = setup({
+    'GET /api/todos': list([active]),
+    'GET /api/todos?status=overdue': list([]),
+  })
+  await screen.findByRole('heading', { name: 'Prepare a demo' })
+  await user.selectOptions(screen.getByLabelText('Status'), 'overdue')
+  expect(
+    await screen.findByRole('heading', { name: 'No matching tasks' }),
+  ).toBeVisible()
+  expect(fetch).toHaveBeenCalledWith(
+    '/api/todos?status=overdue',
+    expect.anything(),
+  )
+})
+
+it('drops a task completed in the Overdue view once the server list is refetched', async () => {
+  const late = { ...active, due_date: '2020-01-01' }
+  const { user } = setup({
+    'GET /api/todos': list([late]),
+    'GET /api/todos?status=overdue': [list([late]), list([])],
+    'PATCH /api/todos/7': () => Response.json({ ...late, completed: true }),
+  })
+  await screen.findByRole('heading', { name: 'Prepare a demo' })
+  await user.selectOptions(screen.getByLabelText('Status'), 'overdue')
+  await user.click(
+    await screen.findByRole('checkbox', { name: 'Complete: Prepare a demo' }),
+  )
+  expect(
+    await screen.findByRole('heading', { name: 'No matching tasks' }),
+  ).toBeVisible()
 })

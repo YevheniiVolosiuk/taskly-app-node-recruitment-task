@@ -12,7 +12,7 @@ it('patches only writable fields and replaces the cached task with the response'
   vi.stubGlobal('fetch', fetch)
   const client = createTestClient()
   const other = { ...todoFixture, id: 8 }
-  client.setQueryData<Todo[]>(todoKeys.list, [todoFixture, other])
+  client.setQueryData<Todo[]>(todoKeys.list('all'), [todoFixture, other])
   const { result } = renderHook(() => useUpdateTodoMutation(), {
     wrapper: createWrapper(client),
   })
@@ -31,5 +31,5 @@ it('patches only writable fields and replaces the cached task with the response'
     due_date: null,
     completed: true,
   })
-  expect(client.getQueryData(todoKeys.list)).toEqual([saved, other])
+  expect(client.getQueryData(todoKeys.list('all'))).toEqual([saved, other])
 })

@@ -34,6 +34,21 @@
     },
     "/api/todos": {
       "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "completed",
+                "overdue"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -47,6 +62,9 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Invalid input"
           }
         }
       },

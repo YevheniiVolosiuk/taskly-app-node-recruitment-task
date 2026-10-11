@@ -36,4 +36,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Complete a task](./complete-task.md) covers marking a task done and back to active.
 - [Edit and delete a task](./edit-delete-task.md) covers changing fields and confirmed deletion.
 - [Find tasks](./find-tasks.md) covers search, the status filter, and sorting.
-- [Todos API](./todos-api.md) covers health and CRUD over HTTP, as the Verification Job runs it.
+- [Todos API](./todos-api.md) covers health, CRUD, and the status filter over HTTP, as the Verification Job runs it.

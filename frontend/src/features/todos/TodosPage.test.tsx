@@ -50,7 +50,6 @@ it('displays a query failure and resets mutation errors before retrying', async 
     filter: 'all',
     search: '',
     sort: 'newest',
-    visible: [],
     setFilter: vi.fn(),
     setSearch: vi.fn(),
     setSort: vi.fn(),

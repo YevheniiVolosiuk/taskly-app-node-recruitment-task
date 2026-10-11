@@ -81,3 +81,14 @@ it('propagates database errors', async () => {
   vi.spyOn(database.todo, 'findMany').mockRejectedValue(new Error('Database unavailable'));
   await expect(repository.list()).rejects.toThrow('Database unavailable');
 });
+
+it.each([
+  ['active', { completed: false }],
+  ['completed', { completed: true }],
+] as const)('filters the %s list by completion', async (status, where) => {
+  const { database, repository } = setup();
+  const findMany = vi.spyOn(database.todo, 'findMany').mockResolvedValue([]);
+  await repository.list(status);
+  expect(findMany).toHaveBeenCalledWith({ where, orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+});
+

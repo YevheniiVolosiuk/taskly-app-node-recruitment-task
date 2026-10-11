@@ -22,21 +22,23 @@ const input = {
 }
 
 describe('selectTodos', () => {
-  it('combines status with a case-insensitive search in the description', () => {
+  it('matches a case-insensitive search in the description', () => {
     const matching = { ...base, description: 'Discuss the API' }
-    const todos = [
-      matching,
-      { ...matching, id: 2, completed: true },
-      { ...base, id: 3 },
-    ]
-    expect(selectTodos(todos, 'active', ' api ', 'newest')).toEqual([matching])
+    const todos = [matching, { ...base, id: 3 }]
+    expect(selectTodos(todos, ' api ', 'newest')).toEqual([matching])
   })
 
   it('sorts by priority without changing the source array', () => {
     const high: Todo = { ...base, id: 2, priority: 'high' }
     const todos = [base, high]
-    expect(selectTodos(todos, 'all', '', 'priority')).toEqual([high, base])
+    expect(selectTodos(todos, '', 'priority')).toEqual([high, base])
     expect(todos).toEqual([base, high])
+  })
+
+  it('sorts equal priorities by id descending', () => {
+    const low: Todo = { ...base, id: 1, priority: 'high' }
+    const high: Todo = { ...base, id: 5, priority: 'high' }
+    expect(selectTodos([low, high], '', 'priority')).toEqual([high, low])
   })
 
   it('sorts by due date ascending, undated last, ties by id descending', () => {
@@ -44,14 +46,14 @@ describe('selectTodos', () => {
     const b = { ...base, id: 2, due_date: '2026-11-01' }
     const c = { ...base, id: 3, due_date: '2026-12-01' }
     const d = { ...base, id: 4, due_date: null }
-    expect(selectTodos([a, d, b, c], 'all', '', 'due')).toEqual([b, c, a, d])
+    expect(selectTodos([a, d, b, c], '', 'due')).toEqual([b, c, a, d])
   })
 
   it('sorts newest first by creation time, ties by id descending', () => {
     const old = { ...base, id: 1, created_at: '2026-09-01T12:00:00Z' }
     const tieLow = { ...base, id: 2 }
     const tieHigh = { ...base, id: 3 }
-    expect(selectTodos([old, tieLow, tieHigh], 'all', '', 'newest')).toEqual([
+    expect(selectTodos([old, tieLow, tieHigh], '', 'newest')).toEqual([
       tieHigh,
       tieLow,
       old,
