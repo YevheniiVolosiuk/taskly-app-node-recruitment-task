@@ -163,7 +163,7 @@ TypeScript helpers for the Test Agent PR workflow (`.github/workflows/test-agent
 - `filesToMutate` — lists the changed source files Stryker mutates in each package: candidates, never tests or Skipped files.
 - `parseMutationReport` — validates Stryker's JSON report and computes the mutation score and surviving mutants.
 - `parseCoverageSummary` — validates Vitest's `json-summary` coverage report and reads line and branch coverage per file.
-- `renderReport` — renders the sticky PR comment and job summary: verdict, per-file decisions, Evidence (coverage change of the changed source files, mutation score per package with collapsible surviving mutants), Suspected Bugs, and collapsible Behaviors and tests, kept under GitHub's comment limit.
+- `renderReport` — renders the sticky PR comment and job summary: verdict, per-file decisions, Evidence (Verification Job check outcomes and the `test-agent/verify` result for the verified commit, coverage change of the changed source files, mutation score per package with collapsible surviving mutants), Suspected Bugs, and collapsible Behaviors and tests, kept under GitHub's comment limit.
 
 Installation:
 
