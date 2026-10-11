@@ -613,6 +613,14 @@ jobs:
           sparse-checkout: tools
           persist-credentials: false
 
+      # The commit the Verification Job verified, read for the tests that `already covered` Skips cite.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ needs.verify.outputs.state == 'success' || needs.verify.outputs.state == 'failure' }}
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          path: verified
+          persist-credentials: false
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -680,7 +688,8 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           node tools/src/cli/report.ts "$RUNNER_TEMP/classification.json" "$RUNNER_TEMP/agent-run" \
-            "$RUNNER_TEMP/patch-validation.json" "$RUNNER_TEMP/mutation" "$RUNNER_TEMP/coverage" "$RUNNER_TEMP/report.md"
+            "$RUNNER_TEMP/patch-validation.json" "$RUNNER_TEMP/mutation" "$RUNNER_TEMP/coverage" "$GITHUB_WORKSPACE/verified" \
+            "$RUNNER_TEMP/report.md"
           cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
 
       # Fork and Dependabot PRs get a read-only token, so they get the job summary only.

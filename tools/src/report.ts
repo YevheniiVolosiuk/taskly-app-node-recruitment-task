@@ -61,6 +61,8 @@ export type ReportInput = {
   mutation: MutationResults;
   coverage: CoverageDelta;
   verification: VerificationResult;
+  // Skipped files whose `already covered` citation is not in the verified commit; empty when nothing was verified.
+  missingCitations: ReadonlySet<string>;
   runUrl: string;
 };
 
@@ -70,6 +72,7 @@ type Row = {
   // Markdown: trusted classification text as is, agent text escaped.
   reason: string;
   log?: FileLog;
+  citationMissing?: boolean;
 };
 
 const COMMENT_LIMIT = 65_536;
@@ -98,7 +101,7 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-function toRows(classification: Classification | null, agent: AgentResult): Row[] {
+function toRows(classification: Classification | null, agent: AgentResult, missingCitations: ReadonlySet<string>): Row[] {
   if (!classification) return [];
   const { files } = classification;
   const logs = new Map(agent.status === 'succeeded' ? agent.log.files.map((log) => [log.path, log]) : []);
@@ -108,7 +111,7 @@ function toRows(classification: Classification | null, agent: AgentResult): Row[
 
     const log = logs.get(file.path);
     if (!log) return { path: file.path, decision: 'not_run', reason: 'Missing from the Decision Log' };
-    return { path: file.path, decision: log.decision, reason: escapeMarkdown(log.reason), log };
+    return { path: file.path, decision: log.decision, reason: escapeMarkdown(log.reason), log, citationMissing: missingCitations.has(log.path) };
   });
   return [...rows.filter((row) => row.decision !== 'skipped'), ...rows.filter((row) => row.decision === 'skipped')];
 }
@@ -151,14 +154,21 @@ function table(budget: Budget, rows: readonly Row[]): string[] {
   if (rows.length === 0) return [];
   const { kept, omitted } = fit(
     budget,
-    rows.map((row) => `| ${codeSpan(row.path, true)} | \`${row.decision}\` | ${row.reason} |`),
+    rows.map((row) => `| ${codeSpan(row.path, true)} | \`${row.decision}\` | ${row.citationMissing ? '⚠️ **Citation not found.** ' : ''}${row.reason} |`),
   );
+  const citationNote = rows.some((row) => row.citationMissing)
+    ? [
+        '_⚠️ Citation not found: the cited test file or title is not in the verified commit. A warning, not a gate: it does not change `test-agent/verify`._',
+        '',
+      ]
+    : [];
   const lines = [
     '| File | Decision | Reason |',
     '| --- | --- | --- |',
     ...kept,
     '',
     ...(omitted > 0 ? [`_${plural(omitted, 'more changed file')} not shown._`, ''] : []),
+    ...citationNote,
   ];
   return rows.length > COLLAPSED_TABLE_ROWS ? collapsible(`Decisions for ${rows.length} changed files`, lines) : lines;
 }
@@ -374,8 +384,8 @@ function behaviorsAndTests(budget: Budget, logs: readonly FileLog[]): string[] {
   return collapsible('Behaviors and tests', [...kept, ...omittedNote(omitted, 'more file')]);
 }
 
-export function renderReport({ classification, agent, apply, mutation, coverage, verification, runUrl }: ReportInput): string {
-  const rows = toRows(classification, agent);
+export function renderReport({ classification, agent, apply, mutation, coverage, verification, missingCitations, runUrl }: ReportInput): string {
+  const rows = toRows(classification, agent, missingCitations);
   const logs = rows.flatMap((row) => (row.log ? [row.log] : []));
   const summary = agent.status === 'succeeded' ? [escapeMarkdown(agent.log.summary), ''] : [];
   const head = [

@@ -6,15 +6,19 @@
 //   VERIFY_JOB_RESULT=<needs.verify.result> VERIFY_STATE=<test-agent/verify state the Verification Job decided, or empty>
 //   STATUS_POSTED=<true when the Verification Job posts test-agent/verify> VERIFIED_SHA=<commit the Verification Job checked out>
 //   RUN_URL=<workflow run URL>
-//   node tools/src/cli/report.ts <classification.json> <agent-run-dir> <patch-validation.json> <mutation-dir> <coverage-dir> <report.md>
+//   node tools/src/cli/report.ts <classification.json> <agent-run-dir> <patch-validation.json> <mutation-dir> <coverage-dir>
+//     <verified-checkout> <report.md>
 // <classification.json> is missing when the classify job failed.
 // <agent-run-dir> holds the agent job's execution-result.json and decision-log.json, both untrusted; either may be missing.
 // <patch-validation.json> may be missing when the apply job did not validate a patch.
 // <mutation-dir>/<package>/mutation.json is Stryker's report from a run of the PR's code; it may be missing.
 // <coverage-dir>/coverage-{baseline,summary}-<package>/coverage-summary.json are Vitest's coverage summaries of the merge
 // base and of the verified commit, keyed by absolute paths under GITHUB_WORKSPACE; any may be missing.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+// <verified-checkout> is a checkout of VERIFIED_SHA, present when the Verification Job finished.
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { agentResult } from '../agent-run.ts';
+import { findMissingCitations } from '../citation.ts';
 import type { Classification } from '../classify.ts';
 import { parseCoverageSummary, type CoverageFiles } from '../coverage.ts';
 import type { PatchValidation } from '../patch.ts';
@@ -30,10 +34,10 @@ import {
   type VerificationResult,
 } from '../report.ts';
 
-const [classificationPath, agentRunDir, validationPath, mutationDir, coverageDir, outputPath] = process.argv.slice(2);
-if (!classificationPath || !agentRunDir || !validationPath || !mutationDir || !coverageDir || !outputPath) {
+const [classificationPath, agentRunDir, validationPath, mutationDir, coverageDir, verifiedDir, outputPath] = process.argv.slice(2);
+if (!classificationPath || !agentRunDir || !validationPath || !mutationDir || !coverageDir || !verifiedDir || !outputPath) {
   throw new Error(
-    'usage: report.ts <classification.json> <agent-run-dir> <patch-validation.json> <mutation-dir> <coverage-dir> <report.md>',
+    'usage: report.ts <classification.json> <agent-run-dir> <patch-validation.json> <mutation-dir> <coverage-dir> <verified-checkout> <report.md>',
   );
 }
 
@@ -116,6 +120,22 @@ function coverageFiles(run: 'baseline' | 'summary', root: string): CoverageFiles
   return summaries.length === 0 ? null : Object.assign({}, ...summaries);
 }
 
+// The agent names the cited file, so read only a regular file inside the checkout, symlinks resolved.
+function readVerified(root: string, file: string): string | null {
+  const path = resolve(root, file);
+  if (!existsSync(path)) return null;
+  const real = realpathSync(path);
+  const inside = relative(realpathSync(root), real);
+  if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside) || !statSync(real).isFile()) return null;
+  return readFileSync(real, 'utf8');
+}
+
+function citationsMissing(agent: AgentResult, verification: VerificationResult, root: string): ReadonlySet<string> {
+  if (agent.status !== 'succeeded' || verification.status !== 'finished') return new Set();
+  if (!existsSync(root)) throw new Error(`${root} does not exist: check out the verified commit there`);
+  return findMissingCitations(agent.log.files, (file) => readVerified(root, file));
+}
+
 const classificationJson = read(classificationPath);
 const classification = classificationJson === null ? null : (JSON.parse(classificationJson) as Classification);
 const runUrl = process.env.RUN_URL;
@@ -131,4 +151,8 @@ const mutation: MutationResults = {
 };
 const coverage: CoverageDelta = { base: coverageFiles('baseline', workspace), final: coverageFiles('summary', workspace) };
 const verification = verificationResult(process.env.VERIFY_JOB_RESULT, process.env.VERIFY_STATE);
-writeFileSync(outputPath, renderReport({ classification, agent, apply, mutation, coverage, verification, runUrl }));
+const missingCitations = citationsMissing(agent, verification, verifiedDir);
+writeFileSync(
+  outputPath,
+  renderReport({ classification, agent, apply, mutation, coverage, verification, missingCitations, runUrl }),
+);
