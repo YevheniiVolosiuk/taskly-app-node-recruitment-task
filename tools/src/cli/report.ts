@@ -14,7 +14,7 @@
 // <mutation-dir>/<package>/mutation.json is Stryker's report from a run of the PR's code; it may be missing.
 // <coverage-dir>/coverage-{baseline,summary}-<package>/coverage-summary.json are Vitest's coverage summaries of the merge
 // base and of the verified commit, keyed by absolute paths under GITHUB_WORKSPACE; any may be missing.
-// <verified-checkout> is a checkout of VERIFIED_SHA, present when the Verification Job finished.
+// <verified-checkout> is a checkout of VERIFIED_SHA, present when the Verification Job finished; citations go unchecked without it.
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { agentResult } from '../agent-run.ts';
@@ -132,7 +132,10 @@ function readVerified(root: string, file: string): string | null {
 
 function citationsMissing(agent: AgentResult, verification: VerificationResult, root: string): ReadonlySet<string> {
   if (agent.status !== 'succeeded' || verification.status !== 'finished') return new Set();
-  if (!existsSync(root)) throw new Error(`${root} does not exist: check out the verified commit there`);
+  if (!existsSync(root)) {
+    console.log(`::warning::Not checking already covered citations: ${root} holds no checkout of the verified commit`);
+    return new Set();
+  }
   return findMissingCitations(agent.log.files, (file) => readVerified(root, file));
 }
 

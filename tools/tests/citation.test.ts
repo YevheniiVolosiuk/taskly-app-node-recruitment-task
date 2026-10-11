@@ -53,6 +53,53 @@ describe('citesTest', () => {
     expect(citesTest(source, title)).toBe(false);
   });
 
+  describe('in a source with comments, regular expressions, and escapes', () => {
+    const tricky = String.raw`
+// it('commented out', () => {});
+/* describe('block commented', () => {
+  it('inside a block comment', () => {});
+}); */
+expect(text).toMatch(/don't (stop/);
+it('after a regular expression', () => {});
+it.each(['(', ')('])('handles bracket %s', () => {});
+it('line one\nline two', () => {});
+it('caf\u00e9 menu', () => {});
+it.skip('skipped test', () => {});
+it.todo('todo test');
+it.skip.each([1])('skipped table %s', () => {});
+describe.skip('skipped group', () => {
+  it('inside a skipped group', () => {});
+});
+describe('running group', () => {
+  it('inside a running group', () => {});
+});
+`;
+
+    it.each([
+      'after a regular expression',
+      'handles bracket %s',
+      String.raw`line one\nline two`,
+      'café menu',
+      String.raw`caf\u00e9 menu`,
+      'inside a running group',
+    ])('finds %j', (title) => {
+      expect(citesTest(tricky, title)).toBe(true);
+    });
+
+    it.each([
+      'commented out',
+      'block commented',
+      'inside a block comment',
+      'skipped test',
+      'todo test',
+      'skipped table %s',
+      'skipped group',
+      'inside a skipped group',
+    ])('does not find %j, which no run executes', (title) => {
+      expect(citesTest(tricky, title)).toBe(false);
+    });
+  });
+
   it('finds a title written with escaped quotes', () => {
     expect(citesTest(`it('doesn\\'t crash', () => {});`, "doesn't crash")).toBe(true);
   });

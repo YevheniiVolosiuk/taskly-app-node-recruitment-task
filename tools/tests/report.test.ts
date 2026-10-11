@@ -57,6 +57,10 @@ function completed(summary: Partial<MutationSummary>): MutationResults['backend'
   return { status: 'completed', summary: { score: 75, detected: 3, survived: 1, noCoverage: 0, survivors: [survivor()], ...summary } };
 }
 
+function citationNote(skips: number): string {
+  return `⚠️ Citation not found for ${skips} Skip${skips === 1 ? '' : 's'}: the cited test file or title is not in the verified commit, or the test is skipped. A warning, not a gate: it does not change \`test-agent/verify\`.`;
+}
+
 function tableRows(report: string): string[] {
   return report.split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('| File') && !line.startsWith('| ---'));
 }
@@ -158,12 +162,28 @@ describe('renderReport', () => {
       const report = render(new Set([router]));
 
       expect(tableRows(report)).toEqual([
-        '| `backend/src/api/health.ts` | `skipped` | no behavior change\\: renamed a variable |',
         '| `backend/src/features/todos/router.ts` | `skipped` | ⚠️ **Citation not found.** already covered\\: backend/tests/todos\\.test\\.ts \\> lists every todo |',
+        '| `backend/src/api/health.ts` | `skipped` | no behavior change\\: renamed a variable |',
       ]);
-      expect(report).toContain(
-        '_⚠️ Citation not found: the cited test file or title is not in the verified commit. A warning, not a gate: it does not change `test-agent/verify`._',
-      );
+      expect(report).toContain(`_${citationNote(1)}_`);
+    });
+
+    it('keeps the warned Skip and its note when the table runs out of room', () => {
+      const docs = Array.from({ length: 5000 }, (_, i) => `docs/${'deep/'.repeat(50)}page-${i}.md`);
+      const report = renderReport({
+        classification: classifyChanges([...docs, router], openPr),
+        agent: succeeded('Covered.', [entry(router, { decision: 'skipped', reason, behaviors: [], tests: [], attempts: 0 })]),
+        apply: notApplied,
+        mutation: noMutation,
+        coverage: noCoverage,
+        verification: notVerified,
+        missingCitations: new Set([router]),
+        runUrl,
+      });
+
+      expect(report).toMatch(/_\d+ more changed files not shown\._/);
+      expect(tableRows(report)[0]).toContain('⚠️ **Citation not found.**');
+      expect(report).toContain(`</details>\n\n_${citationNote(1)}_\n`);
     });
   });
 

@@ -113,7 +113,9 @@ function toRows(classification: Classification | null, agent: AgentResult, missi
     if (!log) return { path: file.path, decision: 'not_run', reason: 'Missing from the Decision Log' };
     return { path: file.path, decision: log.decision, reason: escapeMarkdown(log.reason), log, citationMissing: missingCitations.has(log.path) };
   });
-  return [...rows.filter((row) => row.decision !== 'skipped'), ...rows.filter((row) => row.decision === 'skipped')];
+  // Warned Skips lead the Skips, so a table cut short keeps them.
+  const order = (row: Row) => (row.decision !== 'skipped' ? 0 : row.citationMissing ? 1 : 2);
+  return rows.toSorted((a, b) => order(a) - order(b));
 }
 
 function verdict(classification: Classification | null, agent: AgentResult, rows: readonly Row[]): string {
@@ -156,21 +158,22 @@ function table(budget: Budget, rows: readonly Row[]): string[] {
     budget,
     rows.map((row) => `| ${codeSpan(row.path, true)} | \`${row.decision}\` | ${row.citationMissing ? '⚠️ **Citation not found.** ' : ''}${row.reason} |`),
   );
-  const citationNote = rows.some((row) => row.citationMissing)
-    ? [
-        '_⚠️ Citation not found: the cited test file or title is not in the verified commit. A warning, not a gate: it does not change `test-agent/verify`._',
-        '',
-      ]
-    : [];
+  const warned = rows.filter((row) => row.citationMissing).length;
+  const citationNote =
+    warned === 0
+      ? []
+      : [
+          `_⚠️ Citation not found for ${plural(warned, 'Skip')}: the cited test file or title is not in the verified commit, or the test is skipped. A warning, not a gate: it does not change \`test-agent/verify\`._`,
+          '',
+        ];
   const lines = [
     '| File | Decision | Reason |',
     '| --- | --- | --- |',
     ...kept,
     '',
     ...(omitted > 0 ? [`_${plural(omitted, 'more changed file')} not shown._`, ''] : []),
-    ...citationNote,
   ];
-  return rows.length > COLLAPSED_TABLE_ROWS ? collapsible(`Decisions for ${rows.length} changed files`, lines) : lines;
+  return [...(rows.length > COLLAPSED_TABLE_ROWS ? collapsible(`Decisions for ${rows.length} changed files`, lines) : lines), ...citationNote];
 }
 
 function omittedNote(omitted: number, noun: string, artifact = 'Decision Log'): string[] {
