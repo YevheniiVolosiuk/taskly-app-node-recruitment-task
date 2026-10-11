@@ -91,3 +91,4 @@ it.each([
   await repository.list(status);
   expect(findMany).toHaveBeenCalledWith({ where, orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
 });
+
