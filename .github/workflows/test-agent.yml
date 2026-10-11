@@ -393,6 +393,10 @@ jobs:
       mutation-frontend: ${{ steps.mutation-frontend.outcome }}
       suite-backend: ${{ steps.backend.outcome }}
       suite-frontend: ${{ steps.frontend.outcome }}
+      suite-tools: ${{ steps.tools.outcome }}
+      smoke-api: ${{ steps.smoke-api.outcome }}
+      smoke-build: ${{ steps.smoke-build.outcome }}
+      sha: ${{ env.SHA }}
       files-to-mutate-backend: ${{ steps.files-to-mutate.outputs.backend }}
       files-to-mutate-frontend: ${{ steps.files-to-mutate.outputs.frontend }}
     env:
@@ -647,6 +651,11 @@ jobs:
           MUTATION_FRONTEND_OUTCOME: ${{ needs.verify.outputs.mutation-frontend }}
           SUITE_BACKEND_OUTCOME: ${{ needs.verify.outputs.suite-backend }}
           SUITE_FRONTEND_OUTCOME: ${{ needs.verify.outputs.suite-frontend }}
+          SUITE_TOOLS_OUTCOME: ${{ needs.verify.outputs.suite-tools }}
+          SMOKE_API_OUTCOME: ${{ needs.verify.outputs.smoke-api }}
+          SMOKE_BUILD_OUTCOME: ${{ needs.verify.outputs.smoke-build }}
+          VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.sha }}
           FILES_TO_MUTATE_BACKEND: ${{ needs.verify.outputs.files-to-mutate-backend }}
           FILES_TO_MUTATE_FRONTEND: ${{ needs.verify.outputs.files-to-mutate-frontend }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

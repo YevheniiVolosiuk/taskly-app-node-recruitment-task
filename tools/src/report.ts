@@ -28,6 +28,24 @@ export type MutationResults = Record<MutationPackage, MutationResult>;
 // Coverage of the merge base and of the verified commit; null when that run produced no summary.
 export type CoverageDelta = { base: CoverageFiles | null; final: CoverageFiles | null };
 
+// The Verification Job's checks, named after their steps so a failure points at its log.
+const verificationChecks = {
+  backend: 'Backend tests with coverage',
+  frontend: 'Frontend tests with coverage',
+  tools: 'Tools tests',
+  smokeApi: 'Smoke check backend',
+  smokeBuild: 'Smoke check frontend type-check and build',
+} as const;
+
+export type VerificationCheck = keyof typeof verificationChecks;
+
+export type CheckOutcome = 'passed' | 'failed' | 'not_run';
+
+export type VerificationResult =
+  | { status: 'not_run' }
+  | { status: 'cancelled' }
+  | { status: 'finished'; sha: string; checks: Record<VerificationCheck, CheckOutcome> };
+
 export type ReportInput = {
   // null when the classify job failed.
   classification: Classification | null;
@@ -35,6 +53,7 @@ export type ReportInput = {
   apply: ApplyResult;
   mutation: MutationResults;
   coverage: CoverageDelta;
+  verification: VerificationResult;
   runUrl: string;
 };
 
@@ -291,8 +310,39 @@ function coverageSection(budget: Budget, rows: readonly Row[], coverage: Coverag
   ];
 }
 
-function evidence(coverage: readonly string[], mutation: readonly string[]): string[] {
-  return coverage.length === 0 && mutation.length === 0 ? [] : ['### Evidence', '', ...coverage, ...mutation];
+const outcomeText: Record<CheckOutcome, string> = { passed: 'passed', failed: 'failed', not_run: 'did not run' };
+
+// The overall result follows the Verification Job's rule for posting test-agent/verify: success only when every check passed.
+function verificationSection(result: VerificationResult, apply: ApplyResult): string[] {
+  const heading = ['#### Verification', ''];
+  switch (result.status) {
+    case 'not_run':
+      return [...heading, 'The Verification Job did not run, so nothing was verified and `test-agent/verify` was not posted.', ''];
+    case 'cancelled':
+      return [
+        ...heading,
+        'The Verification Job was cancelled or timed out, so `test-agent/verify` is `error`. Its checks did not finish, so none is shown.',
+        '',
+      ];
+    case 'finished': {
+      const { sha, checks } = result;
+      const entries = Object.entries(verificationChecks) as [VerificationCheck, string][];
+      const failed = entries.filter(([check]) => checks[check] === 'failed').map(([, name]) => name);
+      const state = entries.every(([check]) => checks[check] === 'passed') ? 'success' : 'failure';
+      const commit = apply.status === 'committed' && apply.sha === sha ? "the Test Agent's test commit" : 'the pull request head';
+      const steps = failed.length === 1 ? 'that step' : 'those steps';
+      return [
+        ...heading,
+        `\`test-agent/verify\`: \`${state}\` on ${sha} (${commit}).`,
+        '',
+        '| Check | Outcome |',
+        '| --- | --- |',
+        ...entries.map(([check, name]) => `| ${name} | ${outcomeText[checks[check]]} |`),
+        '',
+        ...(failed.length > 0 ? [`_Failed: ${failed.join(', ')}. Open ${steps} in the Verification Job log._`, ''] : []),
+      ];
+    }
+  }
 }
 
 function listSection(title: string, items: readonly string[]): string[] {
@@ -318,7 +368,7 @@ function behaviorsAndTests(budget: Budget, logs: readonly FileLog[]): string[] {
   return collapsible('Behaviors and tests', [...kept, ...omittedNote(omitted, 'more file')]);
 }
 
-export function renderReport({ classification, agent, apply, mutation, coverage, runUrl }: ReportInput): string {
+export function renderReport({ classification, agent, apply, mutation, coverage, verification, runUrl }: ReportInput): string {
   const rows = toRows(classification, agent);
   const logs = rows.flatMap((row) => (row.log ? [row.log] : []));
   const summary = agent.status === 'succeeded' ? [escapeMarkdown(agent.log.summary), ''] : [];
@@ -331,8 +381,10 @@ export function renderReport({ classification, agent, apply, mutation, coverage,
     ...summary,
   ];
 
+  const verificationLines = verificationSection(verification, apply);
+
   // Spent in order of importance; the sections still render in reading order.
-  const budget = { left: COMMENT_LIMIT - FIXED_TEXT_ALLOWANCE - head.join('\n').length };
+  const budget = { left: COMMENT_LIMIT - FIXED_TEXT_ALLOWANCE - [...head, ...verificationLines].join('\n').length };
   const applyLines = applied(budget, apply);
   const bugs = suspectedBugs(budget, logs);
   const decisions = table(budget, rows);
@@ -344,7 +396,11 @@ export function renderReport({ classification, agent, apply, mutation, coverage,
     ...head,
     ...applyLines,
     ...decisions,
-    ...evidence(coverageLines, mutationLines),
+    '### Evidence',
+    '',
+    ...verificationLines,
+    ...coverageLines,
+    ...mutationLines,
     ...bugs,
     ...details,
     `[Workflow run](${runUrl})`,
