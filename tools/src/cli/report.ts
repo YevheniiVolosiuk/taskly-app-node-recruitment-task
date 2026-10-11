@@ -1,7 +1,11 @@
 // Usage: AGENT_JOB_RESULT=<needs.agent.result> AGENT_OUTCOME=<agent step outcome> AGENT_TIMED_OUT=<1 when it timed out>
 //   APPLY_JOB_RESULT=<needs.apply.result> APPLY_COMMIT=<pushed SHA or empty>
 //   MUTATION_<PACKAGE>_OUTCOME=<Stryker step outcome> SUITE_<PACKAGE>_OUTCOME=<test suite step outcome>
-//   FILES_TO_MUTATE_<PACKAGE>=<files-to-mutate output> (for BACKEND and FRONTEND) RUN_URL=<workflow run URL>
+//   FILES_TO_MUTATE_<PACKAGE>=<files-to-mutate output> (for BACKEND and FRONTEND) SUITE_TOOLS_OUTCOME=<tools tests step outcome>
+//   SMOKE_API_OUTCOME=<backend smoke check step outcome> SMOKE_BUILD_OUTCOME=<frontend type-check and build step outcome>
+//   VERIFY_JOB_RESULT=<needs.verify.result> VERIFY_STATE=<test-agent/verify state the Verification Job decided, or empty>
+//   STATUS_POSTED=<true when the Verification Job posts test-agent/verify> VERIFIED_SHA=<commit the Verification Job checked out>
+//   RUN_URL=<workflow run URL>
 //   node tools/src/cli/report.ts <classification.json> <agent-run-dir> <patch-validation.json> <mutation-dir> <coverage-dir> <report.md>
 // <classification.json> is missing when the classify job failed.
 // <agent-run-dir> holds the agent job's execution-result.json and decision-log.json, both untrusted; either may be missing.
@@ -19,9 +23,11 @@ import {
   renderReport,
   type AgentResult,
   type ApplyResult,
+  type CheckOutcome,
   type CoverageDelta,
   type MutationResult,
   type MutationResults,
+  type VerificationResult,
 } from '../report.ts';
 
 const [classificationPath, agentRunDir, validationPath, mutationDir, coverageDir, outputPath] = process.argv.slice(2);
@@ -75,6 +81,30 @@ function mutationResult(pkg: 'BACKEND' | 'FRONTEND', reportPath: string): Mutati
   return parsed.ok ? { status: 'completed', summary: parsed.summary } : { status: 'failed', reason: `invalid report: ${parsed.error}` };
 }
 
+function checkOutcome(outcome: string | undefined): CheckOutcome {
+  if (outcome === 'success') return 'passed';
+  if (outcome === 'failure') return 'failed';
+  return 'not_run';
+}
+
+// The decided state wins over the job result: mutation testing runs after the status is posted and can still fail or be cancelled.
+function verificationResult(jobResult: string | undefined, state: string | undefined): VerificationResult {
+  const posted = process.env.STATUS_POSTED === 'true';
+  if (state === 'error') return { status: 'cancelled', posted };
+  if (jobResult === 'cancelled' && state !== 'success' && state !== 'failure') return { status: 'cancelled', posted: false };
+  if (state !== 'success' && state !== 'failure') return { status: 'not_run' };
+  const sha = process.env.VERIFIED_SHA;
+  if (!sha) throw new Error('VERIFIED_SHA is not set');
+  const checks = {
+    backend: checkOutcome(process.env.SUITE_BACKEND_OUTCOME),
+    frontend: checkOutcome(process.env.SUITE_FRONTEND_OUTCOME),
+    tools: checkOutcome(process.env.SUITE_TOOLS_OUTCOME),
+    'smoke-api': checkOutcome(process.env.SMOKE_API_OUTCOME),
+    'smoke-build': checkOutcome(process.env.SMOKE_BUILD_OUTCOME),
+  };
+  return { status: 'finished', sha, state, posted, checks };
+}
+
 // One package's summary missing leaves its files out; both missing means that run has no coverage.
 function coverageFiles(run: 'baseline' | 'summary', root: string): CoverageFiles | null {
   const summaries = mutationPackages.flatMap((pkg) => {
@@ -100,4 +130,5 @@ const mutation: MutationResults = {
   frontend: mutationResult('FRONTEND', `${mutationDir}/frontend/mutation.json`),
 };
 const coverage: CoverageDelta = { base: coverageFiles('baseline', workspace), final: coverageFiles('summary', workspace) };
-writeFileSync(outputPath, renderReport({ classification, agent, apply, mutation, coverage, runUrl }));
+const verification = verificationResult(process.env.VERIFY_JOB_RESULT, process.env.VERIFY_STATE);
+writeFileSync(outputPath, renderReport({ classification, agent, apply, mutation, coverage, verification, runUrl }));
