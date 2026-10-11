@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decisionLogSchema, parseDecisionLog } from '../src/decision-log.ts';
+import { decisionLogSchema, parseCitation, parseDecisionLog } from '../src/decision-log.ts';
 
 const healthEntry = {
   path: 'backend/src/api/health.ts',
@@ -174,4 +174,20 @@ describe('decisionLogSchema', () => {
     expect(refuses(tests.items, 'x.test.ts > emails [admin](mailto:a@b.c)')).toBe(false);
     expect(refuses(tests.items, 'lists todos\u007f')).toBe(true);
   });
+});
+
+describe('parseCitation', () => {
+  it('splits an already covered reason into the cited test file and test name', () => {
+    expect(parseCitation('already covered: backend/tests/todos.test.ts > lists todos > with a filter')).toEqual({
+      file: 'backend/tests/todos.test.ts',
+      test: 'lists todos > with a filter',
+    });
+  });
+
+  it.each(['no behavior change: renamed the query keys', 'already covered', 'already covered: backend/tests/todos.test.ts'])(
+    'cites no test for the reason %j',
+    (reason) => {
+      expect(parseCitation(reason)).toBeNull();
+    },
+  );
 });

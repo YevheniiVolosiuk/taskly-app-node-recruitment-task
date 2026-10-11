@@ -61,6 +61,8 @@ export type ReportInput = {
   mutation: MutationResults;
   coverage: CoverageDelta;
   verification: VerificationResult;
+  // Skipped files whose `already covered` citation is not in the verified commit; empty when nothing was verified.
+  missingCitations: ReadonlySet<string>;
   runUrl: string;
 };
 
@@ -70,6 +72,7 @@ type Row = {
   // Markdown: trusted classification text as is, agent text escaped.
   reason: string;
   log?: FileLog;
+  citationMissing?: boolean;
 };
 
 const COMMENT_LIMIT = 65_536;
@@ -98,7 +101,7 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-function toRows(classification: Classification | null, agent: AgentResult): Row[] {
+function toRows(classification: Classification | null, agent: AgentResult, missingCitations: ReadonlySet<string>): Row[] {
   if (!classification) return [];
   const { files } = classification;
   const logs = new Map(agent.status === 'succeeded' ? agent.log.files.map((log) => [log.path, log]) : []);
@@ -108,9 +111,11 @@ function toRows(classification: Classification | null, agent: AgentResult): Row[
 
     const log = logs.get(file.path);
     if (!log) return { path: file.path, decision: 'not_run', reason: 'Missing from the Decision Log' };
-    return { path: file.path, decision: log.decision, reason: escapeMarkdown(log.reason), log };
+    return { path: file.path, decision: log.decision, reason: escapeMarkdown(log.reason), log, citationMissing: missingCitations.has(log.path) };
   });
-  return [...rows.filter((row) => row.decision !== 'skipped'), ...rows.filter((row) => row.decision === 'skipped')];
+  // Warned Skips lead the Skips, so a table cut short keeps them.
+  const order = (row: Row) => (row.decision !== 'skipped' ? 0 : row.citationMissing ? 1 : 2);
+  return rows.toSorted((a, b) => order(a) - order(b));
 }
 
 function verdict(classification: Classification | null, agent: AgentResult, rows: readonly Row[]): string {
@@ -151,8 +156,16 @@ function table(budget: Budget, rows: readonly Row[]): string[] {
   if (rows.length === 0) return [];
   const { kept, omitted } = fit(
     budget,
-    rows.map((row) => `| ${codeSpan(row.path, true)} | \`${row.decision}\` | ${row.reason} |`),
+    rows.map((row) => `| ${codeSpan(row.path, true)} | \`${row.decision}\` | ${row.citationMissing ? '⚠️ **Citation not found.** ' : ''}${row.reason} |`),
   );
+  const warned = rows.filter((row) => row.citationMissing).length;
+  const citationNote =
+    warned === 0
+      ? []
+      : [
+          `_⚠️ Citation not found for ${plural(warned, 'Skip')}: the cited test file or title is not in the verified commit, or the test is skipped. A warning, not a gate: it does not change \`test-agent/verify\`._`,
+          '',
+        ];
   const lines = [
     '| File | Decision | Reason |',
     '| --- | --- | --- |',
@@ -160,7 +173,7 @@ function table(budget: Budget, rows: readonly Row[]): string[] {
     '',
     ...(omitted > 0 ? [`_${plural(omitted, 'more changed file')} not shown._`, ''] : []),
   ];
-  return rows.length > COLLAPSED_TABLE_ROWS ? collapsible(`Decisions for ${rows.length} changed files`, lines) : lines;
+  return [...(rows.length > COLLAPSED_TABLE_ROWS ? collapsible(`Decisions for ${rows.length} changed files`, lines) : lines), ...citationNote];
 }
 
 function omittedNote(omitted: number, noun: string, artifact = 'Decision Log'): string[] {
@@ -374,8 +387,8 @@ function behaviorsAndTests(budget: Budget, logs: readonly FileLog[]): string[] {
   return collapsible('Behaviors and tests', [...kept, ...omittedNote(omitted, 'more file')]);
 }
 
-export function renderReport({ classification, agent, apply, mutation, coverage, verification, runUrl }: ReportInput): string {
-  const rows = toRows(classification, agent);
+export function renderReport({ classification, agent, apply, mutation, coverage, verification, missingCitations, runUrl }: ReportInput): string {
+  const rows = toRows(classification, agent, missingCitations);
   const logs = rows.flatMap((row) => (row.log ? [row.log] : []));
   const summary = agent.status === 'succeeded' ? [escapeMarkdown(agent.log.summary), ''] : [];
   const head = [
