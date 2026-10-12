@@ -37,7 +37,7 @@ describe('todo validation', () => {
     expect(todoSchema.parse(todo)).toEqual(todo);
     expect(todoSchema.safeParse({ ...todo, created_at: 'yesterday' }).success).toBe(false);
   });
-  it.each(['active', 'completed', 'overdue'])('accepts list status %s', (status) => {
+  it.each(['active', 'completed', 'overdue', 'due_today'])('accepts list status %s', (status) => {
     expect(listQuerySchema.parse({ status })).toEqual({ status });
   });
   it('accepts a list query without status', () => {

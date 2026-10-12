@@ -64,6 +64,33 @@ In a PR Run, the agent takes the candidates from `classify`, runs `derive-behavi
 
 The same agent and skills run locally in Claude Code, for example to test a branch before opening a PR.
 
+## Why the workflow has its own tooling
+
+The model does one job in a PR Run: it reads the change and writes tests. Everything around it is plain TypeScript in `tools/`, run by ordinary workflow jobs. That is about 1,600 lines in 10 modules and 7 CLI wrappers, with 11 test files. An off-the-shelf action can run the agent, but it cannot decide what the agent may change or check whether its output is true.
+
+What the tooling does that a prompt cannot:
+
+- **Enforces the rules.** `write-guard` blocks agent writes outside test paths, and `validatePatch` applies only test files. A prompt asks the model to keep to the rules. These checks make breaking them impossible.
+- **Narrows the input.** `classify` keeps docs, config, lockfiles, and types away from the model. Each run is smaller, and every Skip has a path-rule reason.
+- **Checks the output.** The Decision Log schema check, the citation check, and the Verification Job treat the agent's claims as untrusted. `test-agent/verify` comes from real suite results, not from the agent's summary.
+- **Measures the result.** Coverage at the merge base and at the verified commit, plus Stryker on the changed files, show whether the new tests catch anything.
+- **Repeats exactly.** The same Decision Log and patch give the same commit, status, and report. The tools have their own tests in the Verification Job.
+
+Effects on the project:
+
+- Reviewers read one sticky comment with decisions, Behaviors, tests, and evidence. They do not read the agent transcript.
+- A wrong or hostile agent output can at worst add tests that fail verification. It cannot change production code or set the PR status.
+- The job that runs the model holds no write token, and the jobs that write run no model.
+- The same `.claude/` agent and skills run locally, so prompt changes can be tried before they reach CI.
+
+Costs:
+
+- `tools/` is a second codebase to own, with its own tests and dependencies. `report.ts` alone is over 400 lines.
+- The workflow has seven jobs, artifacts passed between them, and two copies of `tools/` (base branch and PR head, [ADR 0004](docs/adr/0004-report-runs-pr-head-tools.md)). That is more to read and debug than one action step.
+- A tooling change cannot exercise itself in its own PR (see [Running the PR workflow](#running-the-pr-workflow)), so it needs a follow-up PR to prove it.
+- Every guard is one more place where a valid change can be blocked and a rule has to be updated.
+- Baseline coverage and mutation testing make a PR Run take minutes longer than the plain suites.
+
 ## Coverage pass
 
 The Test Agent added the missing tests through the same skills, run locally: `find-coverage-gaps` ranked the untested logic, the owner approved the list, and the agent wrote tests at the agreed Seams. Per-file coverage thresholds in `backend/vitest.config.ts` and `frontend/vite.config.ts` now fail `test:coverage` if covered logic loses tests.
@@ -77,17 +104,20 @@ The backend's logic directories (`src/api`, `src/features/todos`, `src/core/conf
 
 ## Example run: the demo PR
 
-[PR #20](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/20) adds an **Overdue** status filter served by the API. It shipped without behavior tests and with one planted date-boundary bug: a task due today counts as overdue.
+[PR #32](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/32) fixes the overdue boundary, so a task due today is no longer overdue. It also adds a **Due today** status filter, served by the API and offered in the UI. The PR shipped without tests on purpose, and its description states the intended Behaviors.
 
-Earlier PR Runs on this PR committed tests for the changed logic. For example, [415ff27](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/commit/415ff27) added 105 lines across the router, validators, repository, `useTodosQuery`, and `TodosPage` tests. The last PR Run found those tests in place, so it committed nothing new.
+One [PR Run](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/actions/runs/38191450173) wrote the tests and committed them as [995a139](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/commit/995a139) `test(agent): add tests for the changed files`. That commit adds 132 lines across 7 backend and frontend test files. The [sticky comment](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/32#issuecomment-6116116879) shows:
 
-The [final sticky comment](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/20#issuecomment-6098374930) ([workflow run](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/actions/runs/38179435167)) shows:
+- **Decisions:** 10 changed files. Five logic files are `tested` or `updated`. Five are Skips: documentation (the `verify` feature maps), configuration (`openapi.json`), and type-only declarations (`api.d.ts`). There are no Suspected Bugs and no citation warnings.
+- **Skills used:** the Decision Log records each skill's output.
+  - `derive-behaviors` produced two Behaviors for `repository.ts`. Overdue means `due_date lt` today (UTC). Due today means `due_date` equals today (UTC).
+  - `write-backend-tests` wrote `repository.test.ts > filters the %s list by the UTC date` and extended the validator and router tests for `due_today`.
+  - `write-frontend-tests` wrote `TodoItem.seam.test.tsx`, `TodoFilters.seam.test.tsx`, and `isDueToday` tests in `todos.test.ts`.
+  - `run-and-triage-tests` passed every file on the first attempt.
+- **Boundary:** the committed tests assert three things. A task due today is not overdue. A task due today is due today. An open task due yesterday is overdue.
+- **Evidence:** `test-agent/verify` succeeded on 995a139. The backend, frontend, tools, API smoke, and build checks passed. Line coverage of the changed files held at 100%, and branch coverage of `TodoItem.tsx` rose from 92.9% to 94.4%. The mutation score was 95.65% for the backend and 79.39% for the frontend, with 37 surviving mutants listed.
 
-- **Decisions:** 40 changed files. One `suspected_bug`, 39 Skips: documentation, configuration, lockfile, type-only, test-only, and "already covered" with the covering test cited.
-- **Skills used:** on `backend/src/features/todos/repository.ts`, `derive-behaviors` produced the three Behaviors listed in the comment (overdue means due strictly before today), `write-backend-tests` wrote `repository.test.ts > filters the %s list by completion`, and `run-and-triage-tests` classified its failure as a Suspected Bug after one attempt.
-- **Suspected Bug:** `list('overdue')` queried `due_date lte today`. The PR description and the frontend `isOverdue` say overdue means before today. The failing assertion (expected `lt: 2026-10-15T00:00:00.000Z`, received `lte`) was reported, and the test was removed.
-- **Citation check:** two Skips cited tests that were not in the verified commit, so they were flagged ⚠️ as a warning.
-- **Evidence:** `test-agent/verify` succeeded on the PR head. Backend, frontend, tools, API smoke, and build checks passed. `repository.ts` stayed at 100% line and branch coverage. Mutation score was 85.22% for the backend and 86.00% for the frontend, with 52 surviving mutants listed.
+[PR #20](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/20) shows the Suspected Bug path. It shipped the Overdue filter with a planted bug: `list('overdue')` queried `due_date lte today`. Its [PR Run](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/actions/runs/38179435167) wrote a test from the PR description, saw it fail against the code, and [reported it](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/20#issuecomment-6098374930) as a Suspected Bug instead of committing it. PR #32 fixes that bug.
 
 ## Assumptions
 

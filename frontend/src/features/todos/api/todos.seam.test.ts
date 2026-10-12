@@ -14,7 +14,7 @@ it('requests every task without a status query when the filter is all', async ()
   expect(fetch.mock.calls[0][0]).toBe('/api/todos')
 })
 
-it.each(['active', 'completed', 'overdue'] as const)(
+it.each(['active', 'completed', 'overdue', 'due_today'] as const)(
   'requests /api/todos?status=%s when the filter is %s',
   async (filter) => {
     const { fetch } = setup()

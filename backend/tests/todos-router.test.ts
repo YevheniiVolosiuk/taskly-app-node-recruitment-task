@@ -69,7 +69,7 @@ it('answers 422 to GET list with an unknown status without querying', async () =
   expect(response.status).toBe(422);
   expect(findMany).not.toHaveBeenCalled();
 });
-it.each(['active', 'completed', 'overdue'])('answers 200 to GET list with status=%s', async (status) => {
+it.each(['active', 'completed', 'overdue', 'due_today'])('answers 200 to GET list with status=%s', async (status) => {
   const { app } = setup({ findMany: vi.fn().mockResolvedValue([record]) });
   const response = await request(app).get(`/api/todos?status=${status}`);
   expect(response.status).toBe(200);

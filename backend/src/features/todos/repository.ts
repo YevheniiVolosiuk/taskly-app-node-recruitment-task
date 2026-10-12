@@ -8,11 +8,15 @@ function statusFilter(status: TodoStatus): Prisma.TodoWhereInput {
       return { completed: false };
     case 'completed':
       return { completed: true };
-    case 'overdue': {
-      const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
-      return { completed: false, due_date: { lte: today } };
-    }
+    case 'overdue':
+      return { completed: false, due_date: { lt: utcToday() } };
+    case 'due_today':
+      return { completed: false, due_date: utcToday() };
   }
+}
+
+function utcToday(): Date {
+  return new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
 }
 
 export class TodoRepository implements TodoStore {

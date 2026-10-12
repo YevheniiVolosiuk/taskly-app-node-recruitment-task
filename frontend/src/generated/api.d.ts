@@ -59,7 +59,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    status?: "active" | "completed" | "overdue";
+                    status?: "active" | "completed" | "overdue" | "due_today";
                 };
                 header?: never;
                 path?: never;
