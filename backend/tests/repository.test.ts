@@ -83,6 +83,22 @@ it('propagates database errors', async () => {
 });
 
 it.each([
+  ['overdue', { completed: false, due_date: { lt: new Date('2026-10-12T00:00:00.000Z') } }],
+  ['due_today', { completed: false, due_date: new Date('2026-10-12T00:00:00.000Z') }],
+] as const)('filters the %s list by the UTC date', async (status, where) => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-12T23:30:00Z'));
+  try {
+    const { database, repository } = setup();
+    const findMany = vi.spyOn(database.todo, 'findMany').mockResolvedValue([]);
+    await repository.list(status);
+    expect(findMany).toHaveBeenCalledWith({ where, orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it.each([
   ['active', { completed: false }],
   ['completed', { completed: true }],
 ] as const)('filters the %s list by completion', async (status, where) => {
