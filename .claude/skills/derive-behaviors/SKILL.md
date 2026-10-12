@@ -24,7 +24,7 @@ A **Behavior** (see `GLOSSARY.md`) comes from what the code is _meant_ to do, so
 4. Write each Behavior as one line: `when <input or action>, <observable outcome>`. Cover the edge each source names (empty, boundary, invalid, not found) as its own Behavior. A candidate below its threshold also gets a Behavior for each uncovered line; the line shows only _where_ the gap is.
 5. Assign each Behavior its seam from `docs/test-seams.md`. A Behavior with no listed seam becomes a Skip: `no agreed seam: <what is missing>`.
 6. A candidate whose change alters no Behavior (rename, extraction, reformat) and is not below its threshold is a Skip: `no behavior change: <what changed>`.
-7. A candidate not below its threshold whose every Behavior an existing test already asserts is a Skip that cites one such test: `already covered: <test file> > <test name>`. Copy `<test name>` verbatim from the test source: the string passed to one `it`, `test`, or `describe` that runs (not `.skip` or `.todo`), with `%s` or `$name` left as written. The report flags a citation whose file or title it cannot find at the verified commit.
+7. A candidate not below its threshold whose every Behavior an existing test already asserts is a Skip that cites one such test: `already covered: <test file> > <test name>`. Copy `<test name>` verbatim from the test source: the string passed to one `it`, `test`, or `describe` that runs (not `.skip` or `.todo`), with `%s` or `$name` left as written. Grep for that exact title and copy `<test file>` from the Grep result, not from memory. The report flags a citation whose file or title it cannot find at the verified commit.
 
 Done when every candidate has at least one Behavior with a seam and a source, or a Skip with its reason.
 
