@@ -38,11 +38,12 @@ describe('validatePatch', () => {
     expect(validatePatch(patch(newTest, editedFrontendTest))).toEqual({
       ok: true,
       paths: ['backend/tests/health.test.ts', 'frontend/src/features/todos/hooks/useTodos.test.ts'],
+      changesContent: true,
     });
   });
 
   it('accepts an empty patch with no paths', () => {
-    expect(validatePatch('')).toEqual({ ok: true, paths: [] });
+    expect(validatePatch('')).toEqual({ ok: true, paths: [], changesContent: false });
   });
 
   it('accepts deleting a test file', () => {
@@ -57,7 +58,7 @@ describe('validatePatch', () => {
       '-b',
     ];
 
-    expect(validatePatch(patch(deletion))).toEqual({ ok: true, paths: ['backend/tests/old.test.ts'] });
+    expect(validatePatch(patch(deletion))).toEqual({ ok: true, paths: ['backend/tests/old.test.ts'], changesContent: true });
   });
 
   it('accepts renaming one test file to another', () => {
@@ -71,6 +72,7 @@ describe('validatePatch', () => {
     expect(validatePatch(patch(rename))).toEqual({
       ok: true,
       paths: ['backend/tests/a.test.ts', 'backend/tests/b.test.ts'],
+      changesContent: true,
     });
   });
 
@@ -80,6 +82,27 @@ describe('validatePatch', () => {
     expect(validatePatch(patch(edit('backend/tests/fixture.ts', hunk)))).toEqual({
       ok: true,
       paths: ['backend/tests/fixture.ts'],
+      changesContent: true,
+    });
+  });
+
+  it('counts a new empty test file as changing content', () => {
+    const emptyFile = [
+      'diff --git a/frontend/src/test/empty.ts b/frontend/src/test/empty.ts',
+      'new file mode 100644',
+      'index 0000000..e69de29',
+    ];
+
+    expect(validatePatch(patch(emptyFile))).toEqual({ ok: true, paths: ['frontend/src/test/empty.ts'], changesContent: true });
+  });
+
+  it('accepts a patch that only adds or removes blank lines as changing no content', () => {
+    const blankLines = ['@@ -1,3 +1,4 @@', ' a', '-', '+  ', '+\t', ' b'];
+
+    expect(validatePatch(patch(edit('backend/tests/a.test.ts', blankLines)))).toEqual({
+      ok: true,
+      paths: ['backend/tests/a.test.ts'],
+      changesContent: false,
     });
   });
 
