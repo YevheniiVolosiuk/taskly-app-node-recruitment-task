@@ -44,7 +44,8 @@
               "enum": [
                 "active",
                 "completed",
-                "overdue"
+                "overdue",
+                "due_today"
               ]
             }
           }

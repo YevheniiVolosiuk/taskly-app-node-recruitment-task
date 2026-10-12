@@ -25,4 +25,4 @@ Preconditions:
 
 - Toggle by clicking the parent label, as a user does. The real input is visually hidden under a decorative box, so `$U check` on it times out.
 - The checkbox's accessible name changes after each toggle. Re-target by the new name.
-- A due-date badge gains ` · overdue` only for active tasks with a past due date. Completing such a task removes it.
+- A due-date badge gains ` · overdue` only for active tasks with a past due date, and ` · due today` only for active tasks due today. Completing such a task removes it.

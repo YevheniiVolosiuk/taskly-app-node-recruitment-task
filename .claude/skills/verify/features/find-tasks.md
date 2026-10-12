@@ -5,7 +5,7 @@ Find tasks lets a user narrow the list by text and status and reorder it by crea
 ## Sub-features
 
 - `find-search` matches the query against title and description, case-insensitively.
-- `find-status` shows all, active (`To do`), completed, or overdue tasks. Overdue means not completed and due before today (UTC).
+- `find-status` shows all, active (`To do`), completed, overdue, or due-today tasks. Overdue means not completed and due before today (UTC). Due today means not completed and due today (UTC).
 - `find-sort` orders by `Newest`, `Priority` (high first), or `Due date` (soonest first, undated last).
 - `find-empty` shows `No matching tasks` when filters hide every task.
 
@@ -23,10 +23,11 @@ Preconditions:
 - **Status.** Run `$U select "getByRole('combobox', { name: 'Status' })" active`. `Delta`, `Bravo`, and `Alpha` are listed. Run it again with `completed`. Only `Charlie` is listed. Run it again with `overdue`. Only `Delta` is listed. Reset with `all`.
 - **Empty.** Set status `completed` and search `Alpha`. The heading `No matching tasks` appears.
 - **Sort.** Run `$U select "getByRole('combobox', { name: 'Sort by' })" priority`. The order is `Bravo`, `Delta`, `Charlie`, `Alpha`. With `due`, the order is `Delta`, `Charlie`, `Alpha`, `Bravo`. With `newest`, the order is `Delta`, `Charlie`, `Bravo`, `Alpha`.
+- **Due today.** Create `{"title":"Echo","due_date":"<today>"}` (`<today>` is `date -u +%F`) through `POST /api/todos`, then run `$U reload`. Set status `due_today`. Only `Echo` is listed, and its badge reads ` · due today`. Set status `overdue`. Only `Delta` is listed.
 - **Proof.** Snapshot each state (`find-tasks.<step>.aria.yml`) and read the order of the level-3 headings in the `Task list` region.
 
 ## Gotchas
 
-- `select` takes option values (`all`, `active`, `completed`, `overdue`, `newest`, `priority`, `due`), not the visible labels.
+- `select` takes option values (`all`, `active`, `completed`, `overdue`, `due_today`, `newest`, `priority`, `due`), not the visible labels.
 - Filters are not in the URL or storage. A reload resets them to `All statuses` and `Newest`.
 - Switching status shows `Loading your tasks…` until the list arrives. Wait for the expected headings before you snapshot.
