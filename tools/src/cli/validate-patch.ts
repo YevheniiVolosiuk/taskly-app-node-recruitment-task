@@ -15,6 +15,6 @@ if (!validation.ok) {
   console.error(`Patch rejected: ${JSON.stringify(validation.rejected)}`);
   process.exit(1);
 }
-const changes = validation.paths.length > 0;
-console.log(changes ? `Patch changes test files: ${validation.paths.length}.` : 'Patch is empty.');
+const changes = validation.changesContent;
+console.log(changes ? `Patch touches test files: ${validation.paths.length}.` : 'Patch changes no content.');
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `changes=${changes}\n`);

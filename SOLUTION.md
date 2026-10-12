@@ -9,11 +9,11 @@ A Test Agent runs on every ready-for-review pull request from a branch in this r
 | Claude Code in `anthropics/claude-code-action` is the runtime; the agent and skills live in `.claude/` ([ADR 0001](docs/adr/0001-claude-code-action-as-agent-runtime.md)) | The same files drive the agent locally and in CI, so they cannot drift. The action supplies PR context, auth, and GitHub integration. |
 | The agent writes only test files; Suspected Bugs are reported, never committed ([ADR 0002](docs/adr/0002-test-agent-writes-only-tests.md)) | A generated test that asserts the current output locks bugs in. A test that fails against wrong code is deleted and reported. |
 | No agent run on fork PRs ([ADR 0003](docs/adr/0003-test-agent-skips-fork-prs.md)) | Untrusted code next to a model credential invites prompt injection and secret theft. The plain suites still run. |
-| The report job runs the PR head's `tools/` with a write token ([ADR 0004](docs/adr/0004-report-runs-pr-head-tools.md)) | A same-repo PR can already edit the workflow, so pinning `tools/` to the base adds no security. Forks are already excluded. |
+| The `agent` and `apply` jobs run `tools/` from the base branch; the `report` job runs the PR head's ([ADR 0004](docs/adr/0004-report-runs-pr-head-tools.md)) | The write guard hook and the patch validator follow the same base-branch rules as the agent. For the report, a same-repo PR can already edit the workflow, so pinning its `tools/` adds no security. |
 | Tests only at agreed Seams ([docs/test-seams.md](docs/test-seams.md)) | Test style stays consistent without a human in the loop. A Behavior with no Seam becomes a Skip, not an invented mock. |
 | Changed files are classified by path rules before the agent starts ([docs/skip-rules.md](docs/skip-rules.md)) | Docs, config, lockfiles, types, and test files never reach the model, and every Skip has a reason. |
 | Expected values come from a source (PR description, `openapi.json`, docs, glossary), not from running the code | Without a source, a test cannot tell a bug from intended behavior. |
-| Deterministic jobs around the model: `validatePatch` before commit, Decision Log schema check, Verification Job on the final commit | Agent output is untrusted. Only test-file paths are applied, and only real suite results set `test-agent/verify`. |
+| Deterministic jobs around the model: `validatePatch` before commit, Decision Log schema check, Verification Job on the final commit | The Decision Log and the patch are untrusted. Only test-file paths are applied, and only real suite results set `test-agent/verify`. |
 
 ## Running the PR workflow
 
@@ -21,7 +21,7 @@ Prerequisites:
 
 - Admin access to the repository, and `gh` signed in.
 - One repository secret, either `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. The workflow uses whichever exists.
-- The `main` ruleset ([.github/rulesets/main.json](.github/rulesets/main.json)): pull requests only, `test-agent/verify` must pass, no force-pushes.
+- The `main` ruleset ([.github/rulesets/main.json](.github/rulesets/main.json)): pull requests only, `test-agent/verify` from GitHub Actions must pass, no force-pushes.
 
 Run the setup wizard once from the repo root. It stores the secret, applies the ruleset, and checks that the rules are enforced. Re-running it is safe.
 
@@ -33,8 +33,8 @@ After setup, open a pull request from a branch in this repository. [`.github/wor
 
 1. `pull-request` resolves the live PR head and refuses fork PRs on dispatch.
 2. `classify` sorts the `base...head` diff into candidates and Skips. Drafts, forks, and the `skip-test-agent` label stop the agent.
-3. `agent` runs the Test Agent (Sonnet, 80-turn cap, 15-minute timeout) with a read-only `GITHUB_TOKEN`, no web or `curl` access, no `git push`, no `gh`, and the model credential scrubbed from test subprocesses. It outputs a test patch and the Decision Log.
-4. `apply` validates the patch (test files only) and commits it as `github-actions[bot]` with a `test(agent):` prefix.
+3. `agent` runs the Test Agent (Sonnet, 80-turn cap, 15-minute timeout) with base-branch `.claude/` and `tools/`, a read-only `GITHUB_TOKEN`, no web or `curl` access, no `git push`, no `gh`, and the model credential scrubbed from test subprocesses. It outputs a test patch and the Decision Log.
+4. `apply` validates the patch with base-branch `tools/` (test files only) and commits it as `github-actions[bot]` with a `test(agent):` prefix. A patch that only changes blank lines makes no commit.
 5. `baseline` measures coverage at the merge base.
 6. `verify` (the Verification Job) runs the full suites with coverage, the tools tests, an API smoke check against Postgres, and the frontend build on the final commit. It posts `test-agent/verify`, then runs StrykerJS on the changed source files as a warning.
 7. `report` upserts the sticky PR comment and the job summary.
@@ -64,6 +64,17 @@ In a PR Run, the agent takes the candidates from `classify`, runs `derive-behavi
 
 The same agent and skills run locally in Claude Code, for example to test a branch before opening a PR.
 
+## Coverage pass
+
+The Test Agent added the missing tests through the same skills, run locally: `find-coverage-gaps` ranked the untested logic, the owner approved the list, and the agent wrote tests at the agreed Seams. Per-file coverage thresholds in `backend/vitest.config.ts` and `frontend/vite.config.ts` now fail `test:coverage` if covered logic loses tests.
+
+| Package | Lines | Branches | PR |
+| --- | --- | --- | --- |
+| backend | 33% → 78% | 33% → 94% | [#17](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/17) |
+| frontend | 47.7% → 97.4% | 43.8% → 92.0% | [#18](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/18) |
+
+The backend's logic directories (`src/api`, `src/features/todos`, `src/core/config.ts`) are at 100%. The remaining lines are the process entry point (`main.ts`), startup and shutdown (`lifespan.ts`), and the Prisma client setup (`database.ts`), which need a real database rather than a unit-test Seam.
+
 ## Example run: the demo PR
 
 [PR #20](https://github.com/YevheniiVolosiuk/taskly-app-node-recruitment-task/pull/20) adds an **Overdue** status filter served by the API. It shipped without behavior tests and with one planted date-boundary bug: a task due today counts as overdue.
@@ -86,11 +97,13 @@ The [final sticky comment](https://github.com/YevheniiVolosiuk/taskly-app-node-r
 
 ## Limitations
 
-- Fork PRs get the plain suites but no PR Run.
+- Fork and Dependabot PRs get the plain suites but no PR Run, and cannot post `test-agent/verify`. To merge one, a maintainer pushes it to a branch in this repository.
+- A same-repo PR's workflow file and dependency installs run on the same runner as the agent step. Trust in same-repo authors ([ADR 0003](docs/adr/0003-test-agent-skips-fork-prs.md)) covers this.
+- The `agent` job lifts the runner's AppArmor limit on unprivileged user namespaces, so Claude Code's bubblewrap sandbox can isolate test subprocesses from the model credential.
 - The agent never edits production code. Suspected Bugs need a human fix.
 - Mutation score is reported, not enforced.
 - Browser end-to-end checks run only locally through the `verify` skill. CI runs an API smoke check and the frontend build.
-- The agent can cite a covering test that does not exist. The citation check flags it but does not fail the PR.
+- The agent can cite a covering test that does not exist, although `derive-behaviors` has it copy the path from a Grep result. The citation check flags it but does not fail the PR.
 - A subscription OAuth token shares the subscriber's usage limits and expires after a year.
 - Each PR Run costs model tokens and up to 15 minutes of agent time.
 

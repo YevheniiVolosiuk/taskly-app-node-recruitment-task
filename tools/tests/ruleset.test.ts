@@ -26,10 +26,11 @@ describe('main ruleset', () => {
     expect(rule('non_fast_forward')).toBeDefined();
   });
 
-  it('requires the status the Verification Job posts', () => {
+  // 15368 is the GitHub Actions app: a status with the same name from any other actor does not count.
+  it('requires the status the Verification Job posts, from GitHub Actions only', () => {
     const workflowContext = repoFile('.github/workflows/test-agent.yml').match(/STATUS_CONTEXT: (\S+)/)?.[1];
 
     expect(workflowContext).toBeDefined();
-    expect(rule('required_status_checks')?.parameters?.required_status_checks).toEqual([{ context: workflowContext }]);
+    expect(rule('required_status_checks')?.parameters?.required_status_checks).toEqual([{ context: workflowContext, integration_id: 15368 }]);
   });
 });

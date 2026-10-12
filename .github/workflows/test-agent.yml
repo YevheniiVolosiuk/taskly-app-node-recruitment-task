@@ -137,6 +137,16 @@ jobs:
           done
           git reset --quiet -- "${paths[@]}"
 
+      # The scripts that run next to the model credential, the write guard hook among them, come from the base
+      # branch too, so the PR cannot rewrite them.
+      - name: Use base-branch tools
+        env:
+          BASE_SHA: ${{ needs.pull-request.outputs.base-sha }}
+        run: |
+          rm -rf tools
+          git checkout "$BASE_SHA" -- tools
+          git reset --quiet -- tools
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -215,7 +225,7 @@ jobs:
             --max-turns 80
             --add-dir ${{ runner.temp }}/test-agent-input
             --json-schema '${{ steps.schema.outputs.json }}'
-            --allowedTools Edit Write "Bash(npm --prefix backend test:*)" "Bash(backend/node_modules/.bin/tsc -p backend)" "Bash(npm --prefix frontend test:*)" "Bash(frontend/node_modules/.bin/tsc -p frontend)"
+            --allowedTools Edit Write "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git status:*)" "Bash(npm --prefix backend test:*)" "Bash(backend/node_modules/.bin/tsc -p backend)" "Bash(npm --prefix frontend test:*)" "Bash(frontend/node_modules/.bin/tsc -p frontend)"
             --disallowedTools WebFetch WebSearch "Bash(git push:*)" "Bash(gh:*)" "Bash(curl:*)" "Bash(wget:*)"
 
       # Agent output reaches scripts only through env vars and files. The action's final result message says why a
@@ -251,12 +261,12 @@ jobs:
           AGENT_TIMED_OUT: ${{ steps.run.outputs.timed-out }}
         run: node tools/src/cli/agent-result.ts "$RUNNER_TEMP/agent-run"
 
-      # Everything the agent changed, minus the agent configuration the action restored from the base branch.
+      # Everything the agent changed, minus the agent configuration and tools restored from the base branch.
       - name: Save test patch
         run: |
           # Unstage instead of excluding: an exclude pathspec naming an ignored file makes git add fail.
           git add --all
-          git reset --quiet -- .claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md .husky package.json
+          git reset --quiet -- .claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md .husky tools package.json
           git diff --cached --binary > "$RUNNER_TEMP/test-changes.patch"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -292,9 +302,17 @@ jobs:
           name: test-changes
           path: ${{ runner.temp }}
 
+      # The validator guards the write token, so it comes from the base branch, not the PR.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.pull-request.outputs.base-sha }}
+          path: base
+          sparse-checkout: tools
+          persist-credentials: false
+
       - name: Validate patch
         id: validate
-        run: node tools/src/cli/validate-patch.ts "$RUNNER_TEMP/test-changes.patch" "$RUNNER_TEMP/patch-validation.json"
+        run: node base/tools/src/cli/validate-patch.ts "$RUNNER_TEMP/test-changes.patch" "$RUNNER_TEMP/patch-validation.json"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}

@@ -27,3 +27,7 @@ Tests sit next to the file they cover as `<Module>.test.ts` or `<Module>.test.ts
 | Hooks | `renderHook` with a new `QueryClient` in a `QueryClientProvider` wrapper | `fetch`, via `vi.stubGlobal` |
 | Components | React Testing Library render inside `AppProviders` with a new `QueryClient`, driven by `user-event` | `fetch`, via `vi.stubGlobal` |
 | Pure utilities | direct call | none |
+
+## Contract checks
+
+`backend/tests/openapi.test.ts` checks `backend/openapi.json` against the backend's `todoStatuses`, and `frontend/src/generated/api.test.ts` checks that `frontend/src/generated/api.d.ts` is what `npm run gen:api` generates from `backend/openapi.json`. They keep the three copies of the API contract in step. They assert no Behavior, so they sit at no seam, and the Test Agent does not write or change them.
