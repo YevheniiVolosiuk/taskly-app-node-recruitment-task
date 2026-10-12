@@ -28,6 +28,8 @@ export function TodoItem({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const overdue = isOverdue(todo)
+  const dueToday = isDueToday(todo)
   return (
     <li>
       <Card>
@@ -51,19 +53,13 @@ export function TodoItem({
               </Text>
               {todo.due_date && (
                 <Badge
-                  variant={
-                    isOverdue(todo)
-                      ? 'warning'
-                      : isDueToday(todo)
-                        ? 'info'
-                        : 'neutral'
-                  }
+                  variant={overdue ? 'warning' : dueToday ? 'info' : 'neutral'}
                 >
                   <span className="row compact">
                     <CalendarDays size={14} aria-hidden="true" />
                     {formatDate(todo.due_date)}
-                    {isOverdue(todo) && ' · overdue'}
-                    {isDueToday(todo) && ' · due today'}
+                    {overdue && ' · overdue'}
+                    {dueToday && ' · due today'}
                   </span>
                 </Badge>
               )}
